@@ -73,7 +73,8 @@ class AcovaClimate(CoordinatorEntity[AcovaCoordinator], ClimateEntity):
         mode = self._mode
         if mode is None:
             return None
-        return const.MODE_TO_PRESET.get(mode, const.PRESET_COMFORT)
+        # Pas de preset hors chauffe manuelle (Auto, Veille, Dérogation)
+        return const.MODE_TO_PRESET.get(mode)
 
     @property
     def target_temperature(self) -> float | None:
