@@ -1,22 +1,30 @@
 """Orchestration BLE d'un radiateur ACOVA (au-dessus de `protocol`).
 
-Connexion à la demande : établir la connexion, activer les notifications, exécuter
-la séquence lecture/écriture, puis se déconnecter.
+Connexion à la demande, fidèle à l'app ACOVA Control :
+- délai d'1 s après connexion avant toute opération ;
+- lecture : commande [0, obj, data] puis réponse par notification, avec repli en
+  lecture directe de la caractéristique Données (qui est aussi `read`) ;
+- accusés d'écriture relus jusqu'à ACK_RETRIES fois (retry(10) de l'app).
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import TypeVar
 
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakError
 from bleak_retry_connector import establish_connection
 
 from . import const, protocol
 
 _LOGGER = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 
 class AcovaError(Exception):
@@ -40,6 +48,7 @@ class AcovaDevice:
         self._name = name
         self._lock = asyncio.Lock()
         self._notifications: asyncio.Queue[bytes] = asyncio.Queue()
+        self._notify_ok = False
 
     def set_ble_device(self, ble_device: BLEDevice) -> None:
         """Met à jour le BLEDevice (adresse résolue par HA à chaque poll)."""
@@ -52,96 +61,131 @@ class AcovaDevice:
         def _on_notify(_sender, data: bytearray) -> None:
             self._notifications.put_nowait(bytes(data))
 
-        client = await establish_connection(
-            BleakClient, self._ble_device, self._name
-        )
+        client = await establish_connection(BleakClient, self._ble_device, self._name)
         try:
-            _LOGGER.debug("[%s] Connected; dumping GATT table", self._name)
+            await asyncio.sleep(const.POST_CONNECT_DELAY)
             for service in client.services:
                 for char in service.characteristics:
                     _LOGGER.debug(
-                        "  svc=%s char=%s props=%s",
-                        service.uuid, char.uuid, char.properties,
+                        "[%s] svc=%s char=%s props=%s",
+                        self._name, service.uuid, char.uuid, char.properties,
                     )
             while not self._notifications.empty():
                 self._notifications.get_nowait()
-            await client.start_notify(const.UUID_CHAR_DATA, _on_notify)
+            try:
+                await client.start_notify(const.UUID_CHAR_DATA, _on_notify)
+                self._notify_ok = True
+            except BleakError as err:
+                self._notify_ok = False
+                _LOGGER.debug("[%s] start_notify impossible (%s) : lectures directes", self._name, err)
             yield client
         finally:
+            if self._notify_ok:
+                try:
+                    await client.stop_notify(const.UUID_CHAR_DATA)
+                except BleakError:
+                    pass
             try:
-                await client.stop_notify(const.UUID_CHAR_DATA)
-            except Exception:  # noqa: BLE001 - best effort au nettoyage
+                await client.disconnect()
+            except BleakError:
                 pass
-            await client.disconnect()
 
-    async def _next_notification(self) -> bytes:
-        try:
-            return await asyncio.wait_for(
-                self._notifications.get(), const.NOTIFY_TIMEOUT
+    async def _run(self, operation: Callable[[BleakClient], Awaitable[_T]]) -> _T:
+        """Exécute une opération dans une session en traduisant les erreurs BLE."""
+        async with self._lock:
+            try:
+                async with self._session() as client:
+                    return await operation(client)
+            except (BleakError, TimeoutError) as err:
+                raise AcovaError(f"BLE : {err}") from err
+
+    # --- Réception des réponses -------------------------------------------
+
+    async def _wait_notification(self, object_id: int, data_id: int) -> bytes | None:
+        """Attend la notification correspondant au datapoint, None si absente."""
+        if not self._notify_ok:
+            return None
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + const.NOTIFY_WAIT
+        while (remaining := deadline - loop.time()) > 0:
+            try:
+                raw = await asyncio.wait_for(self._notifications.get(), remaining)
+            except TimeoutError:
+                return None
+            if len(raw) >= 3 and raw[0] == object_id and raw[1] == data_id:
+                return raw
+            _LOGGER.debug("[%s] notification ignorée : %s", self._name, raw.hex())
+        return None
+
+    async def _read_until(self, client: BleakClient, object_id: int, data_id: int) -> bytes:
+        """Relit la caractéristique Données jusqu'à obtenir l'écho attendu."""
+        for attempt in range(1, const.ACK_RETRIES + 1):
+            raw = bytes(await client.read_gatt_char(const.UUID_CHAR_DATA))
+            if len(raw) >= 3 and raw[0] == object_id and raw[1] == data_id:
+                return raw
+            _LOGGER.debug(
+                "[%s] attente écho (%s,%s), lecture %s : %s",
+                self._name, object_id, data_id, attempt, raw.hex(),
             )
-        except asyncio.TimeoutError as err:
-            raise AcovaError("timeout notification") from err
+            await asyncio.sleep(const.ACK_RETRY_DELAY)
+        raise AcovaError(
+            f"pas d'écho ({object_id},{data_id}) après {const.ACK_RETRIES} lectures"
+        )
 
     # --- Primitives lecture/écriture --------------------------------------
 
-    async def _read_dp(self, client, dp: tuple[int, int]) -> bytes:
+    async def _read_dp(self, client: BleakClient, dp: tuple[int, int]) -> bytes:
         object_id, data_id = dp
-        _LOGGER.debug("[%s] read dp (%s,%s): write cmd", self._name, object_id, data_id)
         await client.write_gatt_char(
             const.UUID_CHAR_CMD, protocol.build_read_request(object_id, data_id), response=True
         )
-        raw = await self._next_notification()
-        _LOGGER.debug("[%s] read dp (%s,%s): notif=%s", self._name, object_id, data_id, raw.hex())
-        got = protocol.parse_notification(raw)
-        if got[0] != object_id or got[1] != data_id:
-            raise AcovaError(
-                f"écho inattendu: attendu ({object_id},{data_id}), reçu ({got[0]},{got[1]})"
-            )
-        if protocol.needs_followup_read(raw):
-            raw = await client.read_gatt_char(const.UUID_CHAR_DATA)
-            got = protocol.parse_notification(raw)
-        return got[2]
+        raw = await self._wait_notification(object_id, data_id)
+        if raw is None:
+            _LOGGER.debug("[%s] (%s,%s) sans notification : lecture directe", self._name, object_id, data_id)
+            raw = await self._read_until(client, object_id, data_id)
+        elif protocol.needs_followup_read(raw):
+            raw = await self._read_until(client, object_id, data_id)
+        _LOGGER.debug("[%s] (%s,%s) = %s", self._name, object_id, data_id, raw.hex())
+        return protocol.parse_notification(raw)[2]
 
-    async def _write_dp(self, client, dp: tuple[int, int], value: bytes) -> None:
+    async def _write_dp(self, client: BleakClient, dp: tuple[int, int], value: bytes) -> None:
         object_id, data_id = dp
         await client.write_gatt_char(
             const.UUID_CHAR_DATA,
             protocol.build_write_payload(object_id, data_id, value),
             response=True,
         )
-        ack = protocol.parse_notification(await client.read_gatt_char(const.UUID_CHAR_DATA))
-        if ack[0] != object_id or ack[1] != data_id:
-            raise AcovaError("ack payload invalide")
+        await self._read_until(client, object_id, data_id)
         await client.write_gatt_char(
             const.UUID_CHAR_CMD, protocol.build_write_commit(object_id, data_id), response=True
         )
-        final = protocol.parse_notification(await client.read_gatt_char(const.UUID_CHAR_DATA))
-        if final[0] != 0 or final[1] != 0:
-            raise AcovaError("ack commit invalide")
+        await self._read_until(client, 0, 0)
 
     # --- API métier --------------------------------------------------------
 
     async def async_read_state(self) -> AcovaState:
-        async with self._lock, self._session() as client:
+        async def _read(client: BleakClient) -> AcovaState:
             mode = (await self._read_dp(client, const.DP_THERMOSTAT_MODE))[0]
             comfo = (await self._read_dp(client, const.DP_COMFO_SETPOINT))[0]
             try:
-                eco = (await self._read_dp(client, const.DP_ECO_SETPOINT))[0]
-                eco_temp = protocol.byte_to_temp(eco)
+                eco_temp = protocol.byte_to_temp(
+                    (await self._read_dp(client, const.DP_ECO_SETPOINT))[0]
+                )
             except AcovaError:
                 eco_temp = None
             return AcovaState(
-                mode=mode,
-                comfort_temp=protocol.byte_to_temp(comfo),
-                eco_temp=eco_temp,
+                mode=mode, comfort_temp=protocol.byte_to_temp(comfo), eco_temp=eco_temp
             )
+
+        return await self._run(_read)
 
     async def async_set_mode(self, mode: int) -> None:
-        async with self._lock, self._session() as client:
-            await self._write_dp(client, const.DP_THERMOSTAT_MODE, bytes([mode]))
+        await self._run(
+            lambda client: self._write_dp(client, const.DP_THERMOSTAT_MODE, bytes([mode]))
+        )
 
     async def async_set_comfort_temp(self, celsius: float) -> None:
-        async with self._lock, self._session() as client:
-            await self._write_dp(
-                client, const.DP_COMFO_SETPOINT, bytes([protocol.temp_to_byte(celsius)])
-            )
+        value = bytes([protocol.temp_to_byte(celsius)])
+        await self._run(
+            lambda client: self._write_dp(client, const.DP_COMFO_SETPOINT, value)
+        )

@@ -43,7 +43,10 @@ TEMP_MAX: Final = 30.0
 TEMP_STEP: Final = 0.5
 
 # --- Divers ----------------------------------------------------------------
-NOTIFY_TIMEOUT: Final = 8.0          # s, aligné sur l'app
+POST_CONNECT_DELAY: Final = 1.0      # s, l'app attend 1 s après connexion
+NOTIFY_WAIT: Final = 3.0             # s, attente notification avant repli en lecture directe
+ACK_RETRIES: Final = 10              # relectures de la caract. Données (retry(10) de l'app)
+ACK_RETRY_DELAY: Final = 0.2         # s entre deux relectures
 POLL_INTERVAL: Final = 300           # s, rafraîchissement d'état
 OP_READ: Final = 0x00
 OP_WRITE: Final = 0x01

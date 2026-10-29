@@ -10,7 +10,8 @@ Issu du reverse engineering de l'app *ACOVA Control* (voir `docs/acova-ble-proto
 - Entité `climate` par radiateur :
   - Modes : Arrêt (Veille), Auto (programme), Chauffe (Confort / Éco / Hors-gel via *preset*).
   - Consigne de température (Confort), pas de 0,5 °C.
-- Découverte automatique par Bluetooth (aucune adresse à saisir).
+- Ajout par sélection de l'appareil Bluetooth (ex. « TEMPO 3 (D2:C9:…) »).
+  Les radiateurs ACOVA n'annoncent pas leur UUID de service : pas d'auto-découverte.
 
 Hors v1 : programme hebdomadaire, détection fenêtre, offset de calibration, température ambiante.
 
@@ -28,12 +29,13 @@ HACS → dépôts personnalisés → ajouter l'URL de ce dépôt (catégorie *In
 installer **ACOVA BLE**, puis redémarrer.
 
 ## Configuration
-Paramètres → Appareils et services → le radiateur détecté apparaît automatiquement
-(*Découvert*). Sinon : *Ajouter une intégration* → **ACOVA BLE**.
+Paramètres → Appareils et services → *Ajouter une intégration* → **ACOVA BLE**,
+puis choisir le radiateur dans la liste des appareils Bluetooth détectés.
+Fermer l'app ACOVA Control sur le téléphone : le radiateur n'accepte qu'une connexion.
 
 ## Développement
 ```bash
-pip install pytest
+pip install pytest bleak bleak-retry-connector
 python -m pytest tests/        # tests du protocole (purs, sans matériel)
 ```
 Architecture : `const.py` (constantes) · `protocol.py` (trames, **pur/testé**) ·

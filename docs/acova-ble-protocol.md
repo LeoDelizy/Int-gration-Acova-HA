@@ -31,9 +31,12 @@ Deux services propriétaires (base vendeur `…-0002a5d5c51b`) :
 | **Données** (payload + notifications) | `03366e80-cf3a-11e1-9ab5-0002a5d5c51b` | `350a1b80-cf4b-11e1-ac37-0002a5d5c51b` |
 
 - Le **scan** est non filtré (`startScan([])`) : l'appli liste tous les périphériques BLE.
-  L'identification d'un radiateur ACOVA se fait après connexion par la présence de ces
-  services propriétaires.
-- À la connexion, l'appli active les **notifications** sur `Service Données / Car. Données`.
+  **Vérifié sur matériel** (TEMPO 3) : l'advertising ne contient **pas** l'UUID de service,
+  seulement le nom (`TEMPO 3`). L'identification se fait par nom/adresse.
+- **Propriétés GATT relevées sur un TEMPO 3** : caract. Commande `…ac36` = `write` ;
+  caract. Données `…ac37` = `read`, `write`, `notify`.
+- À la connexion, l'appli **attend 1 s** (`delayWhen(timer(1000))`) puis active les
+  **notifications** sur `Service Données / Car. Données`. Pas de MTU ni de bonding explicite.
 
 ## 3. Modèle d'adressage : `(objectId, dataId)`
 
@@ -84,12 +87,13 @@ Chaque donnée est adressée par un couple d'octets `(objectId, dataId)`.
    ```
    [ objectId, dataId, dataLength, data[0], … data[dataLength-1], 0, 0, … ]  // 30 octets
    ```
-2. **Ack payload** — relire la caractéristique Données, vérifier `objectId`/`dataId`.
+2. **Ack payload** — relire la caractéristique Données jusqu'à obtenir l'écho
+   `objectId`/`dataId` (l'app relit jusqu'à **10 fois** : `retry(10)`).
 3. **Commit** — écrire sur `Service Commande / Car. Commande` la trame 3 octets :
    ```
    [ 0x01, objectId, dataId ]        // octet 0 = 1 → opération ÉCRITURE/COMMIT
    ```
-4. **Ack commit** — relire la caractéristique Données, attendre `[ 0x00, 0x00, … ]`.
+4. **Ack commit** — relire la caractéristique Données jusqu'à `[ 0x00, 0x00, … ]` (10 essais).
 
 > Note iOS/Android : sur Android l'écriture attend le statut `"OK"` entre chaque étape ;
 > sur iOS l'enchaînement est direct (pas de statut intermédiaire).

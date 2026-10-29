@@ -1,6 +1,7 @@
 """Entité climate pour un radiateur ACOVA."""
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from typing import Any
 
 from homeassistant.components.climate import (
@@ -11,12 +12,14 @@ from homeassistant.components.climate import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import const
 from .coordinator import AcovaCoordinator
+from .device import AcovaError
 
 
 async def async_setup_entry(
@@ -76,6 +79,14 @@ class AcovaClimate(CoordinatorEntity[AcovaCoordinator], ClimateEntity):
     def target_temperature(self) -> float | None:
         return self.coordinator.data.comfort_temp if self.coordinator.data else None
 
+    async def _async_send(self, command: Awaitable[None]) -> None:
+        """Envoie une commande au radiateur puis rafraîchit l'état."""
+        try:
+            await command
+        except AcovaError as err:
+            raise HomeAssistantError(f"Radiateur ACOVA injoignable : {err}") from err
+        await self.coordinator.async_request_refresh()
+
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         if hvac_mode == HVACMode.OFF:
             mode = const.MODE_STANDBY
@@ -83,16 +94,15 @@ class AcovaClimate(CoordinatorEntity[AcovaCoordinator], ClimateEntity):
             mode = const.MODE_AUTO
         else:  # HEAT : reprend le preset courant, défaut Confort
             mode = const.PRESET_TO_MODE.get(self.preset_mode, const.MODE_DAY)
-        await self.coordinator.device.async_set_mode(mode)
-        await self.coordinator.async_request_refresh()
+        await self._async_send(self.coordinator.device.async_set_mode(mode))
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        await self.coordinator.device.async_set_mode(const.PRESET_TO_MODE[preset_mode])
-        await self.coordinator.async_request_refresh()
+        await self._async_send(
+            self.coordinator.device.async_set_mode(const.PRESET_TO_MODE[preset_mode])
+        )
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
-        await self.coordinator.device.async_set_comfort_temp(temperature)
-        await self.coordinator.async_request_refresh()
+        await self._async_send(self.coordinator.device.async_set_comfort_temp(temperature))

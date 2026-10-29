@@ -41,24 +41,29 @@ tests/test_protocol.py  # tests purs, sans matériel
 
 ## Protocole de transport (rappel)
 - **Lecture** : write `[0x00, obj, data]` sur caract. Commande → notification `[obj, data, len, …val]`
-  sur caract. Données ; si `len > 17`, relire la caract. Données explicitement.
+  sur caract. Données (repli : lecture directe) ; si `len > 17`, relire la caract. Données.
 - **Écriture** : write payload 30 o `[obj, data, len, …val, 0…]` sur caract. Données (avec réponse)
   → relecture ack → write `[0x01, obj, data]` sur caract. Commande → ack `[0x00, 0x00]`.
   On écrit uniquement le datapoint visé (pas de synchro horloge).
 
 ## Flux
-- Découverte via annonce BLE contenant l'UUID de service → config_flow → confirmation.
+- Ajout manuel : config_flow liste les appareils BLE connectables (l'advertising ACOVA
+  ne contient pas l'UUID de service — vérifié sur TEMPO 3).
 - Coordinator : poll ~5 min, connexion à la demande (connect → read → disconnect).
 - Commande : entité → `device.set_*` → `coordinator.async_request_refresh()`.
 
 ## Robustesse
-- `bleak-retry-connector.establish_connection` ; timeout notification 8 s ; vérif écho obj/data.
+- `bleak-retry-connector.establish_connection` ; délai 1 s après connexion (comme l'app).
+- Lecture : notification attendue 3 s, sinon lecture directe de la caract. Données.
+- Accusés : relecture de la caract. Données jusqu'à 10 fois (retry(10) de l'app).
+- Erreurs Bleak traduites en `AcovaError` → `UpdateFailed` / `HomeAssistantError`.
 - Entité `unavailable` si injoignable ; reprise au poll/annonce suivant.
 
 ## Tests
 - TDD `protocol.py` : round-trip °C↔octet, bornes/clamp, mapping modes, layout payload 30 o,
   parsing notification (dont cas `len > 17`), requêtes lecture/commit.
-- Pas de dépendance HA/BLE dans ces tests.
+- `device.py` avec un faux client GATT : notification, repli lecture directe, échec de
+  `start_notify`, relecture des accusés, erreurs Bleak traduites (requiert `bleak`, pas HA).
 
 ## Points ouverts (validation matériel)
 Température ambiante, bornes min/max réelles, effet de l'écriture de mode, nécessité relecture
