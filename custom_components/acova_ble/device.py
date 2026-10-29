@@ -56,6 +56,19 @@ class AcovaDevice:
             BleakClient, self._ble_device, self._name
         )
         try:
+            _LOGGER.debug("[%s] Connected; dumping GATT table", self._name)
+            for service in client.services:
+                for char in service.characteristics:
+                    _LOGGER.debug(
+                        "  svc=%s char=%s props=%s",
+                        service.uuid, char.uuid, char.properties,
+                    )
+            # Certains modules ACOVA n'envoient de notifications qu'une fois appairés.
+            try:
+                if await client.pair():
+                    _LOGGER.debug("[%s] Paired", self._name)
+            except Exception as err:  # noqa: BLE001 - pairing best effort
+                _LOGGER.debug("[%s] Pairing skipped/failed: %s", self._name, err)
             while not self._notifications.empty():
                 self._notifications.get_nowait()
             await client.start_notify(const.UUID_CHAR_DATA, _on_notify)
@@ -79,10 +92,12 @@ class AcovaDevice:
 
     async def _read_dp(self, client, dp: tuple[int, int]) -> bytes:
         object_id, data_id = dp
+        _LOGGER.debug("[%s] read dp (%s,%s): write cmd", self._name, object_id, data_id)
         await client.write_gatt_char(
             const.UUID_CHAR_CMD, protocol.build_read_request(object_id, data_id), response=True
         )
         raw = await self._next_notification()
+        _LOGGER.debug("[%s] read dp (%s,%s): notif=%s", self._name, object_id, data_id, raw.hex())
         got = protocol.parse_notification(raw)
         if got[0] != object_id or got[1] != data_id:
             raise AcovaError(
