@@ -1,0 +1,5 @@
+# Artefacts de décompilation (binaires volumineux / sorties d'extraction)
+_work/
+*.apk
+*.xapk
+*.dex
