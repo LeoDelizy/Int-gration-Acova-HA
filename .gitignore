@@ -3,3 +3,6 @@ _work/
 *.apk
 *.xapk
 *.dex
+__pycache__/
+*.pyc
+.pytest_cache/

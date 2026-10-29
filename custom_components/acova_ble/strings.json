@@ -1,0 +1,17 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "confirm": {
+        "description": "Ajouter le radiateur ACOVA « {name} » ?"
+      },
+      "user": {
+        "data": { "address": "Appareil" }
+      }
+    },
+    "abort": {
+      "already_configured": "Cet appareil est déjà configuré",
+      "no_devices_found": "Aucun radiateur ACOVA détecté à proximité"
+    }
+  }
+}
