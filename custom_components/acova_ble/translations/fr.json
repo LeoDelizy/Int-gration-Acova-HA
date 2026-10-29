@@ -2,16 +2,23 @@
   "config": {
     "flow_title": "{name}",
     "step": {
-      "confirm": {
-        "description": "Ajouter le radiateur ACOVA « {name} » ?"
-      },
       "user": {
-        "data": { "address": "Appareil" }
+        "description": "Choisissez le radiateur. Après validation, sa LED clignote rapidement : appuyez sur le bouton 2H du thermostat dans les 30 secondes pour valider l'appairage. Fermez l'app ACOVA Control sur votre téléphone.",
+        "data": {
+          "address": "Appareil"
+        }
+      },
+      "confirm": {
+        "description": "Ajouter le radiateur ACOVA « {name} » ? Après validation, sa LED clignote rapidement : appuyez sur le bouton 2H du thermostat dans les 30 secondes."
       }
+    },
+    "error": {
+      "pairing_failed": "Appairage refusé ou délai dépassé. Appuyez sur le bouton 2H quand la LED clignote rapidement, puis réessayez.",
+      "cannot_connect": "Radiateur introuvable ou hors de portée Bluetooth."
     },
     "abort": {
       "already_configured": "Cet appareil est déjà configuré",
-      "no_devices_found": "Aucun radiateur ACOVA détecté à proximité"
+      "no_devices_found": "Aucun appareil Bluetooth détecté à proximité"
     }
   }
 }

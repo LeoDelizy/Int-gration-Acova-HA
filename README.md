@@ -33,6 +33,9 @@ Paramètres → Appareils et services → *Ajouter une intégration* → **ACOVA
 puis choisir le radiateur dans la liste des appareils Bluetooth détectés.
 Fermer l'app ACOVA Control sur le téléphone : le radiateur n'accepte qu'une connexion.
 
+**Appairage** : après validation, la LED du thermostat clignote rapidement ; appuyer sur le
+bouton **2H** dans les 30 s. Sans appairage, le radiateur ignore les commandes.
+
 ## Développement
 ```bash
 pip install pytest bleak bleak-retry-connector

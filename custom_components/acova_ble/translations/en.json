@@ -2,12 +2,23 @@
   "config": {
     "flow_title": "{name}",
     "step": {
-      "confirm": { "description": "Add the ACOVA heater \"{name}\"?" },
-      "user": { "data": { "address": "Device" } }
+      "user": {
+        "description": "Select the heater. After submitting, its LED blinks fast: press the 2H button on the thermostat within 30 seconds to confirm pairing. Close the ACOVA Control app on your phone.",
+        "data": {
+          "address": "Device"
+        }
+      },
+      "confirm": {
+        "description": "Add the ACOVA heater \"{name}\"? After submitting, its LED blinks fast: press the 2H button on the thermostat within 30 seconds."
+      }
+    },
+    "error": {
+      "pairing_failed": "Pairing refused or timed out. Press the 2H button when the LED blinks fast, then try again.",
+      "cannot_connect": "Heater not found or out of Bluetooth range."
     },
     "abort": {
       "already_configured": "This device is already configured",
-      "no_devices_found": "No ACOVA heater found nearby"
+      "no_devices_found": "No Bluetooth device found nearby"
     }
   }
 }

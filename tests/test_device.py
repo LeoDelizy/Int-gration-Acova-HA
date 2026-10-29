@@ -16,8 +16,10 @@ VALUES = {(116, 3): 4, (116, 5): 40, (116, 4): 34}
 class FakeClient:
     """Simule le radiateur : répond aux demandes de lecture par notification et/ou lecture."""
 
-    def __init__(self, *, notify=True, notify_fails=False, read_script=None):
+    def __init__(self, *, notify=True, notify_fails=False, read_script=None, pair_fails=False):
         self.services = []
+        self.paired = False
+        self._pair_fails = pair_fails
         self.writes: list[tuple[str, bytes]] = []
         self._cb = None
         self._notify = notify
@@ -32,6 +34,12 @@ class FakeClient:
 
     async def stop_notify(self, uuid):
         pass
+
+    async def pair(self):
+        if self._pair_fails:
+            raise BleakError("org.bluez.Error.AuthenticationCanceled")
+        self.paired = True
+        return True
 
     async def disconnect(self):
         pass
@@ -116,4 +124,32 @@ def test_bleak_errors_are_wrapped(monkeypatch):
     monkeypatch.setattr(device, "establish_connection", failing_connect)
     dev = device.AcovaDevice(None, "test")
     with pytest.raises(device.AcovaError):
+        asyncio.run(dev.async_read_state())
+
+
+def test_pair_then_verifies_with_a_read(monkeypatch):
+    client = FakeClient()
+    dev = make_device(monkeypatch, client)
+    state = asyncio.run(dev.async_pair())
+    assert client.paired is True
+    assert state.mode == 4
+
+
+def test_regular_read_does_not_pair(monkeypatch):
+    client = FakeClient()
+    dev = make_device(monkeypatch, client)
+    asyncio.run(dev.async_read_state())
+    assert client.paired is False
+
+
+def test_pair_failure_is_wrapped(monkeypatch):
+    dev = make_device(monkeypatch, FakeClient(pair_fails=True))
+    with pytest.raises(device.AcovaError):
+        asyncio.run(dev.async_pair())
+
+
+def test_empty_answers_hint_at_missing_pairing(monkeypatch):
+    client = FakeClient(notify=False, read_script=[bytes(72)] * const.ACK_RETRIES)
+    dev = make_device(monkeypatch, client)
+    with pytest.raises(device.AcovaError, match="2H"):
         asyncio.run(dev.async_read_state())

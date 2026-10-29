@@ -38,6 +38,20 @@ Deux services propriétaires (base vendeur `…-0002a5d5c51b`) :
 - À la connexion, l'appli **attend 1 s** (`delayWhen(timer(1000))`) puis active les
   **notifications** sur `Service Données / Car. Données`. Pas de MTU ni de bonding explicite.
 
+### Appairage (bonding) — obligatoire
+
+**Vérifié sur matériel (TEMPO 3)** : un client non appairé peut se connecter, s'abonner et
+écrire, mais le radiateur **ignore ses commandes** (aucune notification, caractéristique
+Données à zéro). L'appairage BLE est validé physiquement :
+
+- à la demande d'appairage, une LED du thermostat **clignote rapidement** ;
+- l'utilisateur appuie sur le **bouton 2H** (fenêtre ~30 s, sinon `AuthenticationCanceled`) ;
+- dans l'app, l'ajout d'un radiateur fait une lecture (`retry(3)`) et c'est Android qui gère
+  l'appairage ; échec → `HEATER_NOT_PAIRED` (« Le temps de validation sur le bouton 2H du
+  thermostat est dépassé »).
+
+Une fois appairé, le lien est conservé par la pile Bluetooth de l'hôte.
+
 ## 3. Modèle d'adressage : `(objectId, dataId)`
 
 Chaque donnée est adressée par un couple d'octets `(objectId, dataId)`.
