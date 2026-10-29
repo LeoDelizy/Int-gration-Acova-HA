@@ -1,4 +1,9 @@
-"""Config flow : découverte Bluetooth des radiateurs ACOVA + confirmation."""
+"""Config flow : découverte Bluetooth des radiateurs ACOVA + ajout manuel.
+
+Les radiateurs ACOVA (module Toumi) n'annoncent PAS leur UUID de service 128 bits
+dans l'advertising : ils ne sont donc pas auto-découvrables par service_uuid. Le pas
+« user » liste par conséquent tous les appareils BLE connectables pour sélection.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -10,7 +15,7 @@ from homeassistant.components.bluetooth import (
 )
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 
-from .const import DOMAIN, UUID_SERVICE_CMD
+from .const import DOMAIN
 
 
 class AcovaConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -19,14 +24,14 @@ class AcovaConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
-        self._discovered: dict[str, str] = {}  # address -> name
+        self._discovered: dict[str, str] = {}  # address -> "name (address)"
         self._address: str | None = None
         self._name: str | None = None
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
     ) -> ConfigFlowResult:
-        """Appareil détecté via annonce BLE contenant le service ACOVA."""
+        """Appareil détecté via annonce BLE contenant le service ACOVA (si annoncé)."""
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
         self._address = discovery_info.address
@@ -42,6 +47,7 @@ class AcovaConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_create_entry(
                 title=self._name, data={"address": self._address}
             )
+        self._set_confirm_only()
         return self.async_show_form(
             step_id="confirm", description_placeholders={"name": self._name}
         )
@@ -49,21 +55,23 @@ class AcovaConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Sélection manuelle parmi les appareils ACOVA détectés."""
+        """Sélection parmi les appareils BLE connectables détectés."""
         if user_input is not None:
             address = user_input["address"]
             await self.async_set_unique_id(address, raise_on_progress=False)
             self._abort_if_unique_id_configured()
             return self.async_create_entry(
-                title=self._discovered[address], data={"address": address}
+                title=self._discovered.get(address, address),
+                data={"address": address},
             )
 
         current = self._async_current_ids()
-        for info in async_discovered_service_info(self.hass):
+        self._discovered = {}
+        for info in async_discovered_service_info(self.hass, connectable=True):
             if info.address in current:
                 continue
-            if UUID_SERVICE_CMD in info.service_uuids:
-                self._discovered[info.address] = info.name or info.address
+            label = f"{info.name} ({info.address})" if info.name else info.address
+            self._discovered[info.address] = label
 
         if not self._discovered:
             return self.async_abort(reason="no_devices_found")
