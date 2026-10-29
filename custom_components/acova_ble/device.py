@@ -25,6 +25,7 @@ from bleak.exc import BleakError
 from bleak_retry_connector import establish_connection
 
 from . import const, protocol
+from .agent import PairingAgentError, pairing_agent
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,7 +71,8 @@ class AcovaDevice:
             await asyncio.sleep(const.POST_CONNECT_DELAY)
             if pair:
                 _LOGGER.debug("[%s] appairage : appuyer sur 2H quand la LED clignote", self._name)
-                await client.pair()
+                async with pairing_agent(getattr(self._ble_device, "address", "")):
+                    await client.pair()
             for service in client.services:
                 for char in service.characteristics:
                     _LOGGER.debug(
@@ -105,7 +107,7 @@ class AcovaDevice:
             try:
                 async with self._session(pair) as client:
                     return await operation(client)
-            except (BleakError, TimeoutError) as err:
+            except (BleakError, TimeoutError, PairingAgentError) as err:
                 raise AcovaError(f"BLE : {err}") from err
 
     # --- Réception des réponses -------------------------------------------

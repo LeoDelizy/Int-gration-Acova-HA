@@ -51,6 +51,8 @@ tests/test_protocol.py  # tests purs, sans matériel
   ne contient pas l'UUID de service — vérifié sur TEMPO 3).
 - À la validation, le flow appaire le radiateur (`client.pair()`, confirmé par le bouton 2H)
   puis vérifie par une lecture d'état ; erreur `pairing_failed` sinon.
+- Appairage encadré par un agent BlueZ temporaire (`agent.py`) : sans agent, BlueZ refuse la
+  confirmation demandée par le radiateur.
 - Coordinator : poll ~5 min, connexion à la demande (connect → read → disconnect).
 - Commande : entité → `device.set_*` → `coordinator.async_request_refresh()`.
 

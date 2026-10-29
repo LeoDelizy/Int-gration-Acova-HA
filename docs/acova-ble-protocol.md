@@ -52,6 +52,12 @@ Données à zéro). L'appairage BLE est validé physiquement :
 
 Une fois appairé, le lien est conservé par la pile Bluetooth de l'hôte.
 
+**Côté Linux/BlueZ** : le radiateur demande une *confirmation* d'appairage (request type 2).
+Sans agent BlueZ enregistré, `bluetoothd` refuse immédiatement
+(`No agent available for request type 2` → `AuthenticationFailed`). L'intégration enregistre
+donc, le temps de l'appairage, un agent `org.bluez.Agent1` (`DisplayYesNo`) qui accepte la
+confirmation pour ce seul radiateur — l'équivalent du « Associer » d'Android.
+
 ## 3. Modèle d'adressage : `(objectId, dataId)`
 
 Chaque donnée est adressée par un couple d'octets `(objectId, dataId)`.

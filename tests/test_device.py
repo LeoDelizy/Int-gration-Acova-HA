@@ -2,6 +2,7 @@
 import asyncio
 import os
 import sys
+from contextlib import asynccontextmanager
 
 import pytest
 from bleak.exc import BleakError
@@ -66,6 +67,20 @@ def fast_timings(monkeypatch):
     monkeypatch.setattr(const, "NOTIFY_WAIT", 0.05)
 
 
+@pytest.fixture(autouse=True)
+def agent_calls(monkeypatch):
+    """Remplace l'agent BlueZ (bus système indisponible en test) et trace ses usages."""
+    calls: list[str] = []
+
+    @asynccontextmanager
+    async def fake_agent(address):
+        calls.append(address)
+        yield
+
+    monkeypatch.setattr(device, "pairing_agent", fake_agent)
+    return calls
+
+
 def make_device(monkeypatch, client):
     async def fake_connect(*_args, **_kwargs):
         return client
@@ -127,19 +142,33 @@ def test_bleak_errors_are_wrapped(monkeypatch):
         asyncio.run(dev.async_read_state())
 
 
-def test_pair_then_verifies_with_a_read(monkeypatch):
+def test_pair_then_verifies_with_a_read(monkeypatch, agent_calls):
     client = FakeClient()
     dev = make_device(monkeypatch, client)
     state = asyncio.run(dev.async_pair())
     assert client.paired is True
+    assert len(agent_calls) == 1
     assert state.mode == 4
 
 
-def test_regular_read_does_not_pair(monkeypatch):
+def test_regular_read_does_not_pair(monkeypatch, agent_calls):
     client = FakeClient()
     dev = make_device(monkeypatch, client)
     asyncio.run(dev.async_read_state())
     assert client.paired is False
+    assert agent_calls == []
+
+
+def test_agent_registration_failure_is_wrapped(monkeypatch):
+    @asynccontextmanager
+    async def broken_agent(address):
+        raise device.PairingAgentError("RegisterAgent refused")
+        yield
+
+    monkeypatch.setattr(device, "pairing_agent", broken_agent)
+    dev = make_device(monkeypatch, FakeClient())
+    with pytest.raises(device.AcovaError):
+        asyncio.run(dev.async_pair())
 
 
 def test_pair_failure_is_wrapped(monkeypatch):
