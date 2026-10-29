@@ -63,12 +63,6 @@ class AcovaDevice:
                         "  svc=%s char=%s props=%s",
                         service.uuid, char.uuid, char.properties,
                     )
-            # Certains modules ACOVA n'envoient de notifications qu'une fois appairés.
-            try:
-                if await client.pair():
-                    _LOGGER.debug("[%s] Paired", self._name)
-            except Exception as err:  # noqa: BLE001 - pairing best effort
-                _LOGGER.debug("[%s] Pairing skipped/failed: %s", self._name, err)
             while not self._notifications.empty():
                 self._notifications.get_nowait()
             await client.start_notify(const.UUID_CHAR_DATA, _on_notify)
