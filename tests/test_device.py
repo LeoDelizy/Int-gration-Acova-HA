@@ -384,3 +384,36 @@ def test_stale_notification_is_not_taken_as_answer(monkeypatch):
 
     state = asyncio.run(scenario())
     assert state.mode == VALUES[(116, 3)]
+
+
+def test_devices_for_same_address_never_connect_concurrently(monkeypatch):
+    """Entrée HA + config flow (ou deux flows) : pas de connexions simultanées."""
+    active = 0
+    max_active = 0
+
+    class SlowClient(FakeClient):
+        async def write_gatt_char(self, uuid, data, response=False):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            await super().write_gatt_char(uuid, data, response=response)
+
+    async def fake_connect(*_args, **_kwargs):
+        return SlowClient()
+
+    monkeypatch.setattr(device, "establish_connection", fake_connect)
+    flow_dev = device.AcovaDevice(FakeBLEDevice(), "flow")
+    entry_dev = device.AcovaDevice(
+        None,
+        "entry",
+        ble_device_provider=FakeBLEDevice,
+        address=FakeBLEDevice().address.lower(),
+    )
+
+    async def scenario():
+        await asyncio.gather(flow_dev.async_read_state(), entry_dev.async_read_state())
+
+    asyncio.run(scenario())
+    assert max_active == 1
