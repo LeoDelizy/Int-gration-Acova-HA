@@ -19,6 +19,8 @@ PLATFORMS = ["climate", "switch"]
 async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:
     """Configure une entrée (un radiateur)."""
     from homeassistant.components import bluetooth
+    from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+    from homeassistant.core import Event
     from homeassistant.exceptions import ConfigEntryNotReady
 
     from .coordinator import AcovaCoordinator
@@ -32,6 +34,15 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+
+    async def _async_stop(_event: "Event") -> None:
+        # Les entrées ne sont pas déchargées à l'arrêt de HA : libérer le lien
+        # pour que le radiateur reste joignable (app ACOVA Control, redémarrage).
+        await coordinator.device.async_stop()
+
+    entry.async_on_unload(
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop)
+    )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

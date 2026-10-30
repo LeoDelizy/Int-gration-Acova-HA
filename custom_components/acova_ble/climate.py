@@ -5,12 +5,13 @@ from collections.abc import Awaitable
 from typing import Any
 
 from homeassistant.components.climate import (
+    ATTR_HVAC_MODE,
     ClimateEntity,
     ClimateEntityFeature,
     HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_HVAC_MODE, ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -36,7 +37,10 @@ class AcovaClimate(CoordinatorEntity[AcovaCoordinator], ClimateEntity):
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.AUTO]
     _attr_preset_modes = [const.PRESET_COMFORT, const.PRESET_ECO, const.PRESET_AWAY]
     _attr_supported_features = (
-        ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
+        ClimateEntityFeature.TARGET_TEMPERATURE
+        | ClimateEntityFeature.PRESET_MODE
+        | ClimateEntityFeature.TURN_ON
+        | ClimateEntityFeature.TURN_OFF
     )
     _attr_min_temp = const.TEMP_MIN
     _attr_max_temp = const.TEMP_MAX
@@ -81,6 +85,12 @@ class AcovaClimate(CoordinatorEntity[AcovaCoordinator], ClimateEntity):
         # off = hors-gel : la veille couperait le Bluetooth du radiateur
         mode = protocol.mode_for_hvac(hvac_mode, self.preset_mode)
         await self._async_send(self.coordinator.device.async_set_mode(mode))
+
+    async def async_turn_on(self) -> None:
+        await self.async_set_hvac_mode(HVACMode.HEAT)
+
+    async def async_turn_off(self) -> None:
+        await self.async_set_hvac_mode(HVACMode.OFF)
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         await self._async_send(

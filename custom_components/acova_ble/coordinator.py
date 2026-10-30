@@ -30,6 +30,7 @@ class AcovaCoordinator(DataUpdateCoordinator[AcovaState]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name=f"{const.DOMAIN}_{address}",
             update_interval=timedelta(seconds=const.POLL_INTERVAL),
         )

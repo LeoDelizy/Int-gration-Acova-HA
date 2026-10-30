@@ -244,14 +244,30 @@ def test_regular_read_does_not_pair(monkeypatch, agent_calls):
     assert agent_calls == []
 
 
-def test_agent_registration_failure_is_wrapped(monkeypatch):
+def _broken_agent():
     @asynccontextmanager
     async def broken_agent(address):
         raise device.PairingAgentError("RegisterAgent refused")
         yield
 
-    monkeypatch.setattr(device, "pairing_agent", broken_agent)
-    dev, _ = make_device(monkeypatch, FakeClient())
+    return broken_agent
+
+
+def test_pairing_proceeds_without_agent(monkeypatch):
+    """Sans agent BlueZ (proxy ESPHome, pas de D-Bus), pair() est tout de même tenté."""
+    monkeypatch.setattr(device, "pairing_agent", _broken_agent())
+    client = FakeClient()
+    dev, _ = make_device(monkeypatch, client)
+    state = asyncio.run(dev.async_pair())
+    assert client.paired is True
+    assert state.mode == 4
+
+
+def test_pairing_without_agent_still_reports_pair_failure(monkeypatch):
+    monkeypatch.setattr(device, "pairing_agent", _broken_agent())
+    dev, _ = make_device(
+        monkeypatch, [FakeClient(pair_fails=True), FakeClient(pair_fails=True)]
+    )
     with pytest.raises(device.AcovaError):
         asyncio.run(dev.async_pair())
 
@@ -314,3 +330,35 @@ def test_stop_disconnects_cleanly(monkeypatch):
     asyncio.run(scenario())
     assert client.disconnect_count == 1
     assert client.is_connected is False
+
+
+# --- Robustesse ------------------------------------------------------------------
+
+
+def test_late_disconnect_callback_of_old_client_keeps_current_link(monkeypatch):
+    old, new = FakeClient(), FakeClient()
+    dev, connects = make_device(monkeypatch, [old, new])
+
+    async def scenario():
+        await dev.async_read_state()
+        old.is_connected = False
+        await dev.async_read_state()       # reconnexion sur `new`
+        dev._on_disconnect(old)            # rappel tardif de l'ancien client
+        await dev.async_read_state()
+
+    asyncio.run(scenario())
+    assert connects == [old, new]          # pas de reconnexion superflue
+
+
+def test_stale_notification_is_not_taken_as_answer(monkeypatch):
+    client = FakeClient()
+    dev, _ = make_device(monkeypatch, client)
+
+    async def scenario():
+        await dev.async_read_state()
+        # Réponse tardive d'une lecture précédente, restée dans la file.
+        dev._notifications.put_nowait(bytes([116, 3, 1, const.MODE_FROST]))
+        return await dev.async_read_state()
+
+    state = asyncio.run(scenario())
+    assert state.mode == VALUES[(116, 3)]

@@ -1,8 +1,9 @@
 """Config flow : sélection d'un radiateur ACOVA puis appairage (bouton 2H).
 
 Les radiateurs ACOVA (module Toumi) n'annoncent PAS leur UUID de service 128 bits
-dans l'advertising : ils ne sont donc pas auto-découvrables par service_uuid. Le pas
-« user » liste par conséquent tous les appareils BLE connectables pour sélection.
+dans l'advertising : la découverte automatique se fait sur le nom annoncé (`TEMPO*`,
+voir manifest). Le pas « user » liste tous les appareils BLE connectables pour les
+autres modèles.
 
 Le radiateur ignore les commandes d'un client non appairé : à la validation, le flow
 lance l'appairage BLE, que l'utilisateur confirme avec le bouton 2H du thermostat.

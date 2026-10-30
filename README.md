@@ -18,7 +18,8 @@ Issu du reverse engineering de l'app *ACOVA Control* (voir `docs/acova-ble-proto
 - Connexion BLE **permanente avec reconnexion automatique** : commandes rapides, et une
   micro-coupure de lien ne fait plus échouer l'opération.
 - Ajout par sélection de l'appareil Bluetooth (ex. « TEMPO 3 (D2:C9:…) »).
-  Les radiateurs ACOVA n'annoncent pas leur UUID de service : pas d'auto-découverte.
+  Les radiateurs ACOVA n'annoncent pas leur UUID de service : l'auto-découverte se fait
+  sur le nom annoncé (`TEMPO*`, seul modèle vérifié) ; les autres modèles s'ajoutent à la main.
 
 Hors v1 : programme hebdomadaire, détection fenêtre, offset de calibration, température ambiante.
 
@@ -48,6 +49,9 @@ bouton **2H** dans les 30 s. Sans appairage, le radiateur ignore les commandes.
 ```bash
 pip install pytest bleak bleak-retry-connector dbus-fast
 python -m pytest tests/        # tests du protocole (purs, sans matériel)
+
+pip install pytest-homeassistant-custom-component
+python -m pytest tests_ha -o asyncio_mode=auto   # chargement dans un vrai HA (radiateur simulé)
 ```
 Architecture : `const.py` (constantes) · `protocol.py` (trames, **pur/testé**) ·
 `device.py` (BLE, connexion permanente + reconnexion auto) ·
