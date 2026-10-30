@@ -44,6 +44,7 @@ class AcovaCoordinator(DataUpdateCoordinator[AcovaState]):
             ble_device_provider=lambda: bluetooth.async_ble_device_from_address(
                 hass, address, connectable=True
             ),
+            address=address,
         )
 
     async def _async_update_data(self) -> AcovaState:

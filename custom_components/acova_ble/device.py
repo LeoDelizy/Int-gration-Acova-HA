@@ -46,6 +46,15 @@ _T = TypeVar("_T")
 # Erreurs de liaison : transitoires, une reconnexion peut suffire à les lever.
 _CONNECTION_ERRORS = (BleakError, TimeoutError, OSError)
 
+# Un verrou par radiateur, partagé par toutes les instances (entrée HA, config
+# flows concurrents) : deux connexions simultanées vers la même adresse échouent
+# sous BlueZ (`org.bluez.Error.InProgress`) et le radiateur n'accepte qu'un client.
+_ADDRESS_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _address_lock(address: str) -> asyncio.Lock:
+    return _ADDRESS_LOCKS.setdefault(address.upper(), asyncio.Lock())
+
 
 class AcovaError(Exception):
     """Erreur de communication avec le radiateur."""
@@ -75,11 +84,16 @@ class AcovaDevice:
         ble_device: BLEDevice | None,
         name: str,
         ble_device_provider: Callable[[], BLEDevice | None] | None = None,
+        address: str | None = None,
     ) -> None:
+        if address is None:
+            if ble_device is None:
+                raise ValueError("adresse ou BLEDevice requis")
+            address = ble_device.address
         self._ble_device = ble_device
         self._ble_device_provider = ble_device_provider
         self._name = name
-        self._lock = asyncio.Lock()
+        self._lock = _address_lock(address)
         self._client: BleakClient | None = None
         self._expected_disconnect = False
         self._notifications: asyncio.Queue[bytes] = asyncio.Queue()
