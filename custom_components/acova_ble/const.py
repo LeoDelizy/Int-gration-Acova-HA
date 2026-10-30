@@ -37,9 +37,9 @@ PRESET_TO_MODE: Final = {
 }
 MODE_TO_PRESET: Final = {mode: preset for preset, mode in PRESET_TO_MODE.items()}
 
-# --- Bornes de consigne (à confirmer sur matériel) -------------------------
+# --- Bornes de consigne -----------------------------------------------------
 TEMP_MIN: Final = 7.0
-TEMP_MAX: Final = 30.0
+TEMP_MAX: Final = 28.0               # relevé sur TEMPO 3 : 30 °C est plafonné à 28 °C
 TEMP_STEP: Final = 0.5
 
 # --- Divers ----------------------------------------------------------------

@@ -11,7 +11,10 @@ Issu du reverse engineering de l'app *ACOVA Control* (voir `docs/acova-ble-proto
   - Modes : Arrêt (= hors-gel), Auto (programme), Chauffe (Confort / Éco via *preset*).
   - La veille du radiateur n'est jamais commandée : elle coupe son Bluetooth jusqu'à un
     réveil manuel au thermostat.
-  - Consigne de température (Confort), pas de 0,5 °C.
+  - Consigne de température (Confort), pas de 0,5 °C, 7–28 °C (28 °C = maximum du radiateur).
+- Entité `switch` **Chauffe** : ON = chauffe à fond (mode Jour, consigne 28 °C), OFF = hors-gel.
+  Idéale sous un VTherm de type *over_switch*, qui régule par cycles avec sa propre sonde
+  (prévoir des cycles longs : chaque basculement est une écriture dans le radiateur).
 - Ajout par sélection de l'appareil Bluetooth (ex. « TEMPO 3 (D2:C9:…) »).
   Les radiateurs ACOVA n'annoncent pas leur UUID de service : pas d'auto-découverte.
 

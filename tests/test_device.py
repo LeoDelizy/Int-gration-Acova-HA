@@ -9,7 +9,7 @@ from bleak.exc import BleakError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "custom_components"))
 
-from acova_ble import const, device  # noqa: E402
+from acova_ble import const, device, protocol  # noqa: E402
 
 VALUES = {(116, 3): 4, (116, 5): 40, (116, 4): 34}
 
@@ -182,3 +182,38 @@ def test_empty_answers_hint_at_missing_pairing(monkeypatch):
     dev = make_device(monkeypatch, client)
     with pytest.raises(device.AcovaError, match="2H"):
         asyncio.run(dev.async_read_state())
+
+
+# --- Chauffe on/off (switch) -------------------------------------------------
+
+def _writes_by_dp(client):
+    """Liste des (objectId, dataId, valeur) écrits via payload sur la caract. Données."""
+    return [
+        (data[0], data[1], data[3])
+        for uuid, data in client.writes
+        if uuid == const.UUID_CHAR_DATA
+    ]
+
+
+def test_heating_on_sets_max_setpoint_then_day_mode(monkeypatch):
+    client = FakeClient(read_script=[[116, 5, 1, 56], [0, 0, 0], [116, 3, 1, 4], [0, 0, 0]])
+    dev = make_device(monkeypatch, client)
+    asyncio.run(dev.async_set_heating(True, write_setpoint=True))
+    assert _writes_by_dp(client) == [
+        (116, 5, protocol.temp_to_byte(const.TEMP_MAX)),
+        (116, 3, const.MODE_DAY),
+    ]
+
+
+def test_heating_on_skips_setpoint_when_already_max(monkeypatch):
+    client = FakeClient(read_script=[[116, 3, 1, 4], [0, 0, 0]])
+    dev = make_device(monkeypatch, client)
+    asyncio.run(dev.async_set_heating(True, write_setpoint=False))
+    assert _writes_by_dp(client) == [(116, 3, const.MODE_DAY)]
+
+
+def test_heating_off_is_frost_never_standby(monkeypatch):
+    client = FakeClient(read_script=[[116, 3, 1, 2], [0, 0, 0]])
+    dev = make_device(monkeypatch, client)
+    asyncio.run(dev.async_set_heating(False))
+    assert _writes_by_dp(client) == [(116, 3, const.MODE_FROST)]

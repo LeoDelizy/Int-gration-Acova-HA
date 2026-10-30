@@ -12,14 +12,12 @@ from homeassistant.components.climate import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import const, protocol
 from .coordinator import AcovaCoordinator
-from .device import AcovaError
 
 
 async def async_setup_entry(
@@ -77,12 +75,7 @@ class AcovaClimate(CoordinatorEntity[AcovaCoordinator], ClimateEntity):
         return self.coordinator.data.comfort_temp if self.coordinator.data else None
 
     async def _async_send(self, command: Awaitable[None]) -> None:
-        """Envoie une commande au radiateur puis rafraîchit l'état."""
-        try:
-            await command
-        except AcovaError as err:
-            raise HomeAssistantError(f"Radiateur ACOVA injoignable : {err}") from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_send(command)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         # off = hors-gel : la veille couperait le Bluetooth du radiateur

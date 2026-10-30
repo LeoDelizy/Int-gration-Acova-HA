@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable
 from datetime import timedelta
 
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import const
@@ -43,3 +45,11 @@ class AcovaCoordinator(DataUpdateCoordinator[AcovaState]):
             return await self.device.async_read_state()
         except AcovaError as err:
             raise UpdateFailed(str(err)) from err
+
+    async def async_send(self, command: Awaitable[None]) -> None:
+        """Envoie une commande au radiateur puis rafraîchit l'état."""
+        try:
+            await command
+        except AcovaError as err:
+            raise HomeAssistantError(f"Radiateur ACOVA injoignable : {err}") from err
+        await self.async_request_refresh()

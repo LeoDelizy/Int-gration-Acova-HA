@@ -201,6 +201,25 @@ class AcovaDevice:
             lambda client: self._write_dp(client, const.DP_THERMOSTAT_MODE, bytes([mode]))
         )
 
+    async def async_set_heating(self, on: bool, write_setpoint: bool = True) -> None:
+        """Chauffe à fond (mode Jour, consigne max) ou hors-gel, en une session.
+
+        La consigne max n'est réécrite que si nécessaire (`write_setpoint`) afin de
+        limiter les écritures dans la mémoire du radiateur. Jamais la veille : elle
+        coupe le Bluetooth du radiateur.
+        """
+        async def _apply(client: BleakClient) -> None:
+            if not on:
+                await self._write_dp(client, const.DP_THERMOSTAT_MODE, bytes([const.MODE_FROST]))
+                return
+            if write_setpoint:
+                await self._write_dp(
+                    client, const.DP_COMFO_SETPOINT, bytes([protocol.temp_to_byte(const.TEMP_MAX)])
+                )
+            await self._write_dp(client, const.DP_THERMOSTAT_MODE, bytes([const.MODE_DAY]))
+
+        await self._run(_apply)
+
     async def async_set_comfort_temp(self, celsius: float) -> None:
         value = bytes([protocol.temp_to_byte(celsius)])
         await self._run(

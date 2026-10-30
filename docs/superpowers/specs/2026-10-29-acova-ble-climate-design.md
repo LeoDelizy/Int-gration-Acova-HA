@@ -37,7 +37,8 @@ tests/test_protocol.py  # tests purs, sans matériel
 - `hvac_mode` : `off`→2 (hors-gel, jamais la veille 1 qui coupe le Bluetooth) ; `auto`→9 ;
   `heat`→selon preset (4/3, Confort par défaut). Lecture : 1 et 2 → `off`.
 - `preset_mode` : `comfort`→4, `eco`→3, `away`→2
-- `target_temperature` → consigne Confort, step 0.5, min 7 / max 30 (à confirmer matériel)
+- `target_temperature` → consigne Confort, step 0.5, min 7 / max 28 (relevé : 30 plafonné à 28)
+- `switch` Chauffe : ON = consigne 28 (si différente) puis mode Jour, OFF = hors-gel ; une session BLE
 - `current_temperature` : non exposé en v1 (aucun datapoint de température ambiante trouvé) — point ouvert
 
 ## Protocole de transport (rappel)

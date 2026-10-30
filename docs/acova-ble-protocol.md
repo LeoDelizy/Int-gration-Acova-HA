@@ -132,6 +132,11 @@ Chaque donnée est adressée par un couple d'octets `(objectId, dataId)`.
 | Consigne Éco (dataId 4) | `°C = 0.5 × octet` | `octet = 2 × °C` |
 | Offset calibration (dataId 6) | `°C = Int8 / 10` | `octet = 10 × °C` (signé) |
 
+**Vérifié sur matériel (TEMPO 3)** : consigne maximale **28 °C** (une écriture de 30 °C est
+plafonnée à 28 °C) ; la consigne Éco est recalculée par le radiateur (≈ Confort − 3 à 3,5 °C).
+Aucune commande « boost » (bouton 2H) n'existe dans l'app : à 28 °C en mode Jour, le radiateur
+chauffe en continu.
+
 → Résolution de consigne **0,5 °C** sur un octet non signé (ex. 20 °C ↔ `0x28` = 40 ;
 21,5 °C ↔ `0x2B` = 43).
 

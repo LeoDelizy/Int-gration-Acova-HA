@@ -59,7 +59,7 @@ def test_needs_followup_read():
 
 # --- Conversions température ------------------------------------------------
 
-@pytest.mark.parametrize("celsius,byte", [(20.0, 40), (21.5, 43), (7.0, 14), (30.0, 60)])
+@pytest.mark.parametrize("celsius,byte", [(20.0, 40), (21.5, 43), (7.0, 14), (28.0, 56)])
 def test_temp_to_byte(celsius, byte):
     assert protocol.temp_to_byte(celsius) == byte
 
@@ -70,7 +70,7 @@ def test_byte_to_temp(byte, celsius):
 
 
 def test_temp_to_byte_roundtrip():
-    for c in [7.0, 10.5, 19.0, 20.5, 25.0, 30.0]:
+    for c in [7.0, 10.5, 19.0, 20.5, 25.0, 28.0]:
         assert protocol.byte_to_temp(protocol.temp_to_byte(c)) == c
 
 
@@ -125,3 +125,8 @@ def test_no_mapping_ever_produces_standby():
     for hvac in ("off", "heat", "auto"):
         for preset in (None, *const.PRESET_TO_MODE):
             assert protocol.mode_for_hvac(hvac, preset) != const.MODE_STANDBY
+
+
+def test_temp_max_matches_hardware():
+    # Relevé sur TEMPO 3 : une consigne de 30 °C est plafonnée à 28 °C par le radiateur.
+    assert const.TEMP_MAX == 28.0
