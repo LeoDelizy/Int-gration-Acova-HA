@@ -36,8 +36,8 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
     async def _async_stop(_event: "Event") -> None:
-        # Les entrées ne sont pas déchargées à l'arrêt de HA : libérer le lien
-        # pour que le radiateur reste joignable (app ACOVA Control, redémarrage).
+        # Les entrées ne sont pas déchargées à l'arrêt de HA : libérer un lien
+        # resté ouvert (session interrompue) pour que le radiateur reste joignable.
         await coordinator.device.async_stop()
 
     entry.async_on_unload(

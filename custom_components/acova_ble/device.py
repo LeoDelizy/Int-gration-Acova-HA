@@ -1,12 +1,12 @@
 """Orchestration BLE d'un radiateur ACOVA (au-dessus de `protocol`).
 
-Connexion permanente avec reconnexion automatique :
-- le lien BLE est maintenu entre les opérations (le radiateur n'accepte qu'un
-  seul client : l'app ACOVA Control doit donc rester fermée) ;
-- chaque opération vérifie le lien et se reconnecte au besoin (le chemin BlueZ
-  est rafraîchi auprès de Home Assistant à chaque reconnexion) ;
-- une erreur de liaison entraîne une reconnexion puis une nouvelle tentative
-  complète ; une erreur de protocole, non : le radiateur répond, mais mal ;
+Sessions courtes, comme l'app ACOVA Control :
+- chaque opération ouvre sa propre connexion : délai d'1 s, notifications,
+  opération, puis clôture identique à l'app (pause de 3 s, arrêt des
+  notifications avec 3 essais espacés d'1 s, pause d'1 s, déconnexion) ;
+- le lien est donc libre entre deux opérations (l'app reste utilisable) ;
+- une erreur de liaison entraîne une nouvelle session complète ; une erreur de
+  protocole, non : le radiateur répond, mais mal ;
 - chaque opération est bornée dans le temps (`OP_TIMEOUT`).
 
 Erreurs distinguées :
@@ -14,10 +14,9 @@ Erreurs distinguées :
 - `AcovaProtocolError`   : réponses vides ou hors protocole — radiateur en
   veille ou non appairé (validation par le bouton 2H du thermostat).
 
-Fidèle à l'app ACOVA Control : délai d'1 s après connexion avant toute
-opération ; lecture = commande [0, obj, data] puis réponse par notification,
-avec repli en lecture directe de la caractéristique Données ; accusés
-d'écriture relus jusqu'à ACK_RETRIES fois.
+Fidèle à l'app : lecture = commande [0, obj, data] puis réponse par
+notification, avec repli en lecture directe de la caractéristique Données ;
+accusés d'écriture relus jusqu'à ACK_RETRIES fois.
 """
 from __future__ import annotations
 
@@ -118,13 +117,13 @@ class AcovaDevice:
         return self._ble_device
 
     def _on_disconnect(self, client: BleakClient) -> None:
-        """Le lien est tombé de lui-même : il sera rétabli à la prochaine opération."""
+        """Le lien est tombé de lui-même en cours de session."""
         if self._expected_disconnect or client is not self._client:
             # Rappel tardif d'un ancien client : ne pas oublier le lien courant,
             # sinon il resterait ouvert (le radiateur n'accepte qu'un client).
             return
         _LOGGER.info(
-            "[%s] connexion BLE interrompue, reconnexion à la prochaine opération",
+            "[%s] connexion BLE interrompue en cours de session",
             self._name,
         )
         self._client = None
@@ -192,23 +191,48 @@ class AcovaDevice:
         except (BleakError, TimeoutError, OSError) as err:
             _LOGGER.debug("[%s] déconnexion partielle : %s", self._name, err)
 
-    async def _ensure_connected(self) -> BleakClient:
+    async def _stop_notifications(self, client: BleakClient) -> None:
+        """Arrête les notifications : 3 essais espacés d'1 s, comme l'app."""
+        for attempt in range(1, const.STOP_NOTIFY_ATTEMPTS + 1):
+            try:
+                async with asyncio.timeout(const.DISCONNECT_TIMEOUT):
+                    await client.stop_notify(const.UUID_CHAR_DATA)
+                return
+            except (BleakError, TimeoutError, OSError) as err:
+                _LOGGER.debug(
+                    "[%s] arrêt des notifications, essai %s/%s : %s",
+                    self._name,
+                    attempt,
+                    const.STOP_NOTIFY_ATTEMPTS,
+                    err,
+                )
+                if attempt < const.STOP_NOTIFY_ATTEMPTS:
+                    await asyncio.sleep(const.STOP_NOTIFY_RETRY_DELAY)
+
+    async def _end_session(self) -> None:
+        """Clôt la session comme l'app : pause, arrêt des notifications, pause, déconnexion."""
         client = self._client
-        if client is not None and client.is_connected:
-            return client
-        if client is not None:
+        if client is None:
+            return
+        try:
+            if client.is_connected:
+                await asyncio.sleep(const.SESSION_END_DELAY)
+                if self._notify_ok:
+                    self._notify_ok = False
+                    await self._stop_notifications(client)
+                await asyncio.sleep(const.PRE_DISCONNECT_DELAY)
+        finally:
             await self._disconnect()
-        return await self._connect()
 
     # --- Exécution des opérations ----------------------------------------------
 
     async def _run(
         self, operation: Callable[[BleakClient], Awaitable[_T]], *, pair: bool = False
     ) -> _T:
-        """Exécute une opération, avec reconnexion et reprise sur erreur de liaison.
+        """Exécute une opération dans une session, avec reprise sur erreur de liaison.
 
-        Une erreur de liaison déclenche une reconnexion suivie d'une nouvelle
-        tentative complète. Une erreur de protocole n'est pas retentée : le
+        Une erreur de liaison déclenche une nouvelle session complète. Une erreur
+        de protocole n'est pas retentée : le
         radiateur répond, mais hors protocole (appairage/état à corriger).
         """
         async with self._lock:
@@ -235,14 +259,15 @@ class AcovaDevice:
         self, operation: Callable[[BleakClient], Awaitable[_T]], *, pair: bool
     ) -> _T:
         try:
-            if pair and self._client is not None:
-                # L'appairage se valide sur une connexion fraîche (LED 2H).
-                await self._disconnect()
-            client = await self._ensure_connected()
-            if pair:
-                await self._pair(client)
-            async with asyncio.timeout(const.OP_TIMEOUT):
-                return await operation(client)
+            client = await self._connect()
+            try:
+                if pair:
+                    # L'appairage se valide sur la connexion fraîche (LED 2H).
+                    await self._pair(client)
+                async with asyncio.timeout(const.OP_TIMEOUT):
+                    return await operation(client)
+            finally:
+                await self._end_session()
         except AcovaError:
             raise  # déjà classée : protocole ou connexion
         except BleakNotFoundError as err:
@@ -417,6 +442,6 @@ class AcovaDevice:
         await self._run(_apply)
 
     async def async_stop(self) -> None:
-        """Déconnexion propre (déchargement de l'entrée HA, fin d'appairage…)."""
+        """Libère un lien resté ouvert (déchargement de l'entrée HA, arrêt de HA…)."""
         async with self._lock:
             await self._disconnect()

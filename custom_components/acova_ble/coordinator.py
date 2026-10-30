@@ -1,4 +1,4 @@
-"""Coordinator : rafraîchit l'état du radiateur sur la connexion permanente."""
+"""Coordinator : rafraîchit l'état du radiateur par poll (une session BLE par lecture)."""
 from __future__ import annotations
 
 import logging

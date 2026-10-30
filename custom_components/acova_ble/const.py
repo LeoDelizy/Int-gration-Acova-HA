@@ -39,6 +39,11 @@ CONNECT_MAX_ATTEMPTS: Final = 4       # essais de connexion par establish_connec
 OPERATION_ATTEMPTS: Final = 2        # exécutions d'une opération (reconnexion comprise)
 OP_TIMEOUT: Final = 25.0              # s, borne globale d'une opération GATT
 DISCONNECT_TIMEOUT: Final = 5.0      # s, borne de la déconnexion propre
+# Clôture de session identique à l'app : pause, arrêt des notifications, pause, déconnexion
+SESSION_END_DELAY: Final = 3.0       # s, pause avant l'arrêt des notifications
+STOP_NOTIFY_ATTEMPTS: Final = 3      # essais d'arrêt des notifications
+STOP_NOTIFY_RETRY_DELAY: Final = 1.0  # s entre deux essais
+PRE_DISCONNECT_DELAY: Final = 1.0    # s, pause avant la déconnexion
 
 # --- Protocole ---------------------------------------------------------------
 NOTIFY_WAIT: Final = 3.0             # s, attente notification avant repli en lecture directe
@@ -48,6 +53,6 @@ PAYLOAD_SIZE: Final = 30
 INLINE_VALUE_MAX: Final = 17         # au-delà : relecture explicite requise
 
 # --- Divers -------------------------------------------------------------------
-POLL_INTERVAL: Final = 60            # s, rafraîchissement d'état (lien permanent : peu coûteux)
+POLL_INTERVAL: Final = 300           # s, rafraîchissement d'état (une session BLE par poll)
 OP_READ: Final = 0x00
 OP_WRITE: Final = 0x01

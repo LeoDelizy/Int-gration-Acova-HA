@@ -30,6 +30,9 @@ class FakeClient:
         self.is_connected = True
         self.paired = False
         self.disconnect_count = 0
+        self.stop_notify_count = 0
+        self.stop_notify_failures = 0
+        self.events: list[str] = []
         self._pair_fails = pair_fails
         self.writes: list[tuple[str, bytes]] = []
         self._cb = None
@@ -44,7 +47,11 @@ class FakeClient:
         self._cb = cb
 
     async def stop_notify(self, uuid):
-        pass
+        self.stop_notify_count += 1
+        self.events.append("stop_notify")
+        if self.stop_notify_failures:
+            self.stop_notify_failures -= 1
+            raise BleakError("stop notify failed")
 
     async def pair(self):
         if self._pair_fails:
@@ -54,6 +61,7 @@ class FakeClient:
 
     async def disconnect(self):
         self.disconnect_count += 1
+        self.events.append("disconnect")
         self.is_connected = False
 
     async def write_gatt_char(self, uuid, data, response=False):
@@ -90,6 +98,9 @@ def fast_timings(monkeypatch):
     monkeypatch.setattr(const, "POST_CONNECT_DELAY", 0)
     monkeypatch.setattr(const, "ACK_RETRY_DELAY", 0)
     monkeypatch.setattr(const, "NOTIFY_WAIT", 0.05)
+    monkeypatch.setattr(const, "SESSION_END_DELAY", 0)
+    monkeypatch.setattr(const, "STOP_NOTIFY_RETRY_DELAY", 0)
+    monkeypatch.setattr(const, "PRE_DISCONNECT_DELAY", 0)
 
 
 @pytest.fixture(autouse=True)
@@ -143,31 +154,41 @@ def test_read_state_when_start_notify_fails(monkeypatch):
     assert state.mode == 4
 
 
-def test_connection_is_reused_between_operations(monkeypatch):
-    client = FakeClient()
-    dev, connects = make_device(monkeypatch, client)
+def test_each_operation_runs_in_its_own_session(monkeypatch):
+    client1, client2 = FakeClient(), FakeClient()
+    dev, connects = make_device(monkeypatch, [client1, client2])
 
     async def two_reads():
         await dev.async_read_state()
         await dev.async_read_state()
 
     asyncio.run(two_reads())
-    assert len(connects) == 1            # le lien est maintenu entre opérations
-    assert client.disconnect_count == 0
+    assert connects == [client1, client2]  # une connexion par opération, comme l'app
+    assert client1.disconnect_count == client2.disconnect_count == 1
 
 
-def test_reconnects_after_link_loss(monkeypatch):
-    client1, client2 = FakeClient(), FakeClient()
-    dev, connects = make_device(monkeypatch, [client1, client2])
+def test_session_ends_like_the_app(monkeypatch):
+    client = FakeClient()
+    dev, _ = make_device(monkeypatch, client)
+    asyncio.run(dev.async_read_state())
+    assert client.events == ["stop_notify", "disconnect"]
 
-    async def scenario():
-        await dev.async_read_state()
-        client1.is_connected = False    # lien tombé sans prévenir
-        return await dev.async_read_state()
 
-    state = asyncio.run(scenario())
-    assert len(connects) == 2            # reconnexion transparente
-    assert (state.mode, state.comfort_temp) == (4, 20.0)
+def test_stop_notify_retried_then_disconnects(monkeypatch):
+    client = FakeClient()
+    client.stop_notify_failures = 5          # échoue à chaque essai
+    dev, _ = make_device(monkeypatch, client)
+    asyncio.run(dev.async_read_state())
+    assert client.stop_notify_count == const.STOP_NOTIFY_ATTEMPTS
+    assert client.disconnect_count == 1
+
+
+def test_session_closed_after_protocol_error(monkeypatch):
+    client = FakeClient(read_script=[[1, 1, 0]] * (const.ACK_RETRIES + 1))
+    dev, _ = make_device(monkeypatch, client)
+    with pytest.raises(device.AcovaProtocolError):
+        asyncio.run(dev.async_set_heating(True, None))
+    assert client.disconnect_count == 1
 
 
 def test_recovers_from_mid_operation_bleak_error(monkeypatch):
@@ -341,7 +362,7 @@ def test_heating_never_sends_standby_or_frost(monkeypatch):
 # --- Déconnexion propre ---------------------------------------------------------
 
 
-def test_stop_disconnects_cleanly(monkeypatch):
+def test_stop_after_session_does_not_disconnect_twice(monkeypatch):
     client = FakeClient()
     dev, _ = make_device(monkeypatch, client)
 
@@ -355,21 +376,6 @@ def test_stop_disconnects_cleanly(monkeypatch):
 
 
 # --- Robustesse ------------------------------------------------------------------
-
-
-def test_late_disconnect_callback_of_old_client_keeps_current_link(monkeypatch):
-    old, new = FakeClient(), FakeClient()
-    dev, connects = make_device(monkeypatch, [old, new])
-
-    async def scenario():
-        await dev.async_read_state()
-        old.is_connected = False
-        await dev.async_read_state()       # reconnexion sur `new`
-        dev._on_disconnect(old)            # rappel tardif de l'ancien client
-        await dev.async_read_state()
-
-    asyncio.run(scenario())
-    assert connects == [old, new]          # pas de reconnexion superflue
 
 
 def test_stale_notification_is_not_taken_as_answer(monkeypatch):
