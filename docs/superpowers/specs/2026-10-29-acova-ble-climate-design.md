@@ -34,7 +34,8 @@ tests/test_protocol.py  # tests purs, sans matériel
 1=Standby, 2=FrostProtection, 3=Night, 4=Day, 8=User, 9=Auto.
 
 ## Mapping climate
-- `hvac_mode` : `off`→1 ; `auto`→9 ; `heat`→selon preset (4/3/2)
+- `hvac_mode` : `off`→2 (hors-gel, jamais la veille 1 qui coupe le Bluetooth) ; `auto`→9 ;
+  `heat`→selon preset (4/3, Confort par défaut). Lecture : 1 et 2 → `off`.
 - `preset_mode` : `comfort`→4, `eco`→3, `away`→2
 - `target_temperature` → consigne Confort, step 0.5, min 7 / max 30 (à confirmer matériel)
 - `current_temperature` : non exposé en v1 (aucun datapoint de température ambiante trouvé) — point ouvert

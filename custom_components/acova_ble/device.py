@@ -140,7 +140,7 @@ class AcovaDevice:
                 self._name, object_id, data_id, attempt, raw.hex(),
             )
             await asyncio.sleep(const.ACK_RETRY_DELAY)
-        hint = " ; réponse vide : radiateur non appairé (bouton 2H) ?" if not any(raw) else ""
+        hint = " ; réponse vide : radiateur en veille ou non appairé (bouton 2H) ?" if not any(raw) else ""
         raise AcovaError(
             f"pas d'écho ({object_id},{data_id}) après {const.ACK_RETRIES} lectures{hint}"
         )

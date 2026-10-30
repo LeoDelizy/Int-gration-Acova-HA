@@ -8,7 +8,9 @@ Issu du reverse engineering de l'app *ACOVA Control* (voir `docs/acova-ble-proto
 
 ## Fonctionnalités (v1)
 - Entité `climate` par radiateur :
-  - Modes : Arrêt (Veille), Auto (programme), Chauffe (Confort / Éco / Hors-gel via *preset*).
+  - Modes : Arrêt (= hors-gel), Auto (programme), Chauffe (Confort / Éco via *preset*).
+  - La veille du radiateur n'est jamais commandée : elle coupe son Bluetooth jusqu'à un
+    réveil manuel au thermostat.
   - Consigne de température (Confort), pas de 0,5 °C.
 - Ajout par sélection de l'appareil Bluetooth (ex. « TEMPO 3 (D2:C9:…) »).
   Les radiateurs ACOVA n'annoncent pas leur UUID de service : pas d'auto-découverte.

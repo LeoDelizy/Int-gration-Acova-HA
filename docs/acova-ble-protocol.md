@@ -139,12 +139,17 @@ Chaque donnée est adressée par un couple d'octets `(objectId, dataId)`.
 
 | Octet | Mode (interne) | Signification |
 |---|---|---|
-| 1 | Standby | Veille / Arrêt |
+| 1 | Standby | Veille / Arrêt — **coupe le Bluetooth** (voir ci-dessous) |
 | 2 | FrostProtection | Hors-gel |
 | 3 | Night | Éco (température réduite) |
 | 4 | Day | Confort *(valeur par défaut)* |
 | 8 | User | Dérogation / consigne manuelle utilisateur |
 | 9 | Auto | Programmation hebdomadaire active |
+
+> **Vérifié sur matériel (TEMPO 3)** : l'écriture du mode 1 (Veille) est appliquée, mais le
+> radiateur en veille **ne répond plus au protocole** (réponses à zéro / connexions refusées)
+> jusqu'à un réveil manuel au thermostat. L'intégration n'envoie donc jamais ce mode :
+> « off » côté Home Assistant correspond au hors-gel (mode 2).
 
 > À l'écriture du mode, l'appli positionne aussi un flag interne
 > `setThermostatUpdateProgramMode(1)`.

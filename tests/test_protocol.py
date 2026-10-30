@@ -84,3 +84,44 @@ def test_temp_to_byte_clamped_to_bounds():
 def test_preset_mode_mapping_is_bijective():
     for preset, mode in const.PRESET_TO_MODE.items():
         assert const.MODE_TO_PRESET[mode] == preset
+
+
+# --- Correspondance climate HA <-> mode radiateur ---------------------------
+
+@pytest.mark.parametrize("mode,hvac", [
+    (const.MODE_STANDBY, "off"),
+    (const.MODE_FROST, "off"),
+    (const.MODE_NIGHT, "heat"),
+    (const.MODE_DAY, "heat"),
+    (const.MODE_USER, "heat"),
+    (const.MODE_AUTO, "auto"),
+])
+def test_hvac_for_mode(mode, hvac):
+    assert protocol.hvac_for_mode(mode) == hvac
+
+
+def test_off_never_sends_standby():
+    # La veille coupe le Bluetooth du radiateur : « off » doit donner le hors-gel.
+    assert protocol.mode_for_hvac("off", None) == const.MODE_FROST
+    assert protocol.mode_for_hvac("off", const.PRESET_COMFORT) == const.MODE_FROST
+
+
+def test_auto_maps_to_auto():
+    assert protocol.mode_for_hvac("auto", None) == const.MODE_AUTO
+
+
+@pytest.mark.parametrize("preset,mode", [
+    (const.PRESET_COMFORT, const.MODE_DAY),
+    (const.PRESET_ECO, const.MODE_NIGHT),
+    (None, const.MODE_DAY),
+    # Depuis le hors-gel (affiché off + away), repasser en chauffe donne le Confort.
+    (const.PRESET_AWAY, const.MODE_DAY),
+])
+def test_heat_uses_preset(preset, mode):
+    assert protocol.mode_for_hvac("heat", preset) == mode
+
+
+def test_no_mapping_ever_produces_standby():
+    for hvac in ("off", "heat", "auto"):
+        for preset in (None, *const.PRESET_TO_MODE):
+            assert protocol.mode_for_hvac(hvac, preset) != const.MODE_STANDBY
