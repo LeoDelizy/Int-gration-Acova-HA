@@ -62,26 +62,3 @@ def byte_to_temp(byte: int) -> float:
     """Octet de consigne -> °C."""
     return byte * 0.5
 
-
-# --- Correspondance climate HA <-> mode radiateur ---------------------------
-# La veille (MODE_STANDBY) coupe le Bluetooth du radiateur jusqu'à un réveil
-# manuel : elle n'est jamais envoyée. « off » correspond au hors-gel.
-
-def hvac_for_mode(mode: int) -> str:
-    """Mode radiateur -> hvac_mode HA ("off", "heat", "auto")."""
-    if mode in (const.MODE_STANDBY, const.MODE_FROST):
-        return "off"
-    if mode == const.MODE_AUTO:
-        return "auto"
-    return "heat"
-
-
-def mode_for_hvac(hvac: str, preset: str | None) -> int:
-    """hvac_mode HA (+ preset courant) -> mode radiateur à écrire."""
-    if hvac == "off":
-        return const.MODE_FROST
-    if hvac == "auto":
-        return const.MODE_AUTO
-    mode = const.PRESET_TO_MODE.get(preset, const.MODE_DAY)
-    # Repasser en chauffe depuis le hors-gel (off + away) donne le Confort.
-    return const.MODE_DAY if mode == const.MODE_FROST else mode

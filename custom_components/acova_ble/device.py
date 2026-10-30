@@ -65,7 +65,6 @@ class AcovaState:
 
     mode: int
     comfort_temp: float
-    eco_temp: float | None = None
 
 
 class AcovaDevice:
@@ -369,19 +368,7 @@ class AcovaDevice:
             await self._read_dp(client, const.DP_COMFO_SETPOINT),
             const.DP_COMFO_SETPOINT,
         )
-        try:
-            eco_temp = protocol.byte_to_temp(
-                self._first_byte(
-                    await self._read_dp(client, const.DP_ECO_SETPOINT),
-                    const.DP_ECO_SETPOINT,
-                )
-            )
-        except AcovaProtocolError:
-            _LOGGER.debug("[%s] consigne éco illisible", self._name)
-            eco_temp = None
-        return AcovaState(
-            mode=mode, comfort_temp=protocol.byte_to_temp(comfo), eco_temp=eco_temp
-        )
+        return AcovaState(mode=mode, comfort_temp=protocol.byte_to_temp(comfo))
 
     async def async_read_state(self) -> AcovaState:
         return await self._run(self._read_state)
@@ -390,42 +377,30 @@ class AcovaDevice:
         """Appaire le radiateur (validation bouton 2H) puis vérifie par une lecture."""
         return await self._run(self._read_state, pair=True)
 
-    async def async_set_mode(self, mode: int) -> None:
-        await self._run(
-            lambda client: self._write_dp(client, const.DP_THERMOSTAT_MODE, bytes([mode]))
-        )
+    async def async_set_heating(self, on: bool, current: AcovaState | None) -> None:
+        """Chauffe (consigne HEAT_ON_TEMP) ou réduit (HEAT_OFF_TEMP), en mode Jour.
 
-    async def async_set_heating(self, on: bool, write_setpoint: bool = True) -> None:
-        """Chauffe à fond (mode Jour, consigne max) ou hors-gel.
-
-        La consigne max n'est réécrite que si nécessaire (`write_setpoint`) afin de
-        limiter les écritures dans la mémoire du radiateur. Jamais la veille : elle
-        coupe le Bluetooth du radiateur.
+        Le radiateur régule lui-même sur sa consigne Confort : il ne chauffe
+        jamais au-delà de HEAT_ON_TEMP, même si Home Assistant perd le lien.
+        Seul ce qui diffère de `current` est écrit (`None` : tout écrire), afin
+        de limiter les écritures dans la mémoire du radiateur.
         """
+        target = const.HEAT_ON_TEMP if on else const.HEAT_OFF_TEMP
 
         async def _apply(client: BleakClient) -> None:
-            if not on:
-                await self._write_dp(
-                    client, const.DP_THERMOSTAT_MODE, bytes([const.MODE_FROST])
-                )
-                return
-            if write_setpoint:
+            # Consigne d'abord : passer en Jour n'applique jamais l'ancienne consigne.
+            if current is None or current.comfort_temp != target:
                 await self._write_dp(
                     client,
                     const.DP_COMFO_SETPOINT,
-                    bytes([protocol.temp_to_byte(const.TEMP_MAX)]),
+                    bytes([protocol.temp_to_byte(target)]),
                 )
-            await self._write_dp(
-                client, const.DP_THERMOSTAT_MODE, bytes([const.MODE_DAY])
-            )
+            if current is None or current.mode != const.MODE_DAY:
+                await self._write_dp(
+                    client, const.DP_THERMOSTAT_MODE, bytes([const.MODE_DAY])
+                )
 
         await self._run(_apply)
-
-    async def async_set_comfort_temp(self, celsius: float) -> None:
-        value = bytes([protocol.temp_to_byte(celsius)])
-        await self._run(
-            lambda client: self._write_dp(client, const.DP_COMFO_SETPOINT, value)
-        )
 
     async def async_stop(self) -> None:
         """Déconnexion propre (déchargement de l'entrée HA, fin d'appairage…)."""

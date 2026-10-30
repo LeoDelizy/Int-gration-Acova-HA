@@ -25,14 +25,14 @@ def mock_device():
     ):
         device = cls.return_value
         device.async_read_state = AsyncMock(
-            return_value=AcovaState(mode=const.MODE_DAY, comfort_temp=20.0, eco_temp=16.5)
+            return_value=AcovaState(mode=const.MODE_DAY, comfort_temp=const.HEAT_OFF_TEMP)
         )
-        device.async_set_mode = AsyncMock()
+        device.async_set_heating = AsyncMock()
         device.async_stop = AsyncMock()
         yield device
 
 
-async def test_setup_commands_stop_and_unload(hass, mock_device):
+async def test_setup_switch_stop_and_unload(hass, mock_device):
     entry = MockConfigEntry(
         domain=const.DOMAIN, unique_id=ADDRESS, data={"address": ADDRESS}, title="TEMPO 3"
     )
@@ -41,15 +41,15 @@ async def test_setup_commands_stop_and_unload(hass, mock_device):
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.LOADED
 
-    climate = hass.states.get("climate.tempo_3")
-    assert climate.state == "heat"
-    assert climate.attributes["temperature"] == 20.0
-    assert hass.states.get("switch.tempo_3_chauffe").state == "on"
+    assert hass.states.get("climate.tempo_3") is None
+    assert hass.states.get("switch.tempo_3_chauffe").state == "off"
 
     await hass.services.async_call(
-        "climate", "turn_off", {"entity_id": "climate.tempo_3"}, blocking=True
+        "switch", "turn_on", {"entity_id": "switch.tempo_3_chauffe"}, blocking=True
     )
-    mock_device.async_set_mode.assert_awaited_with(const.MODE_FROST)
+    mock_device.async_set_heating.assert_awaited_with(
+        True, AcovaState(mode=const.MODE_DAY, comfort_temp=const.HEAT_OFF_TEMP)
+    )
 
     # Arrêt de HA : le lien BLE est libéré (les entrées ne sont pas déchargées).
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)

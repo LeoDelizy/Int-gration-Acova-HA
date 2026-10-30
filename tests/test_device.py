@@ -128,13 +128,13 @@ def make_device(monkeypatch, clients, provider=None):
 def test_read_state_via_notification(monkeypatch):
     dev, _ = make_device(monkeypatch, FakeClient())
     state = asyncio.run(dev.async_read_state())
-    assert (state.mode, state.comfort_temp, state.eco_temp) == (4, 20.0, 17.0)
+    assert (state.mode, state.comfort_temp) == (4, 20.0)
 
 
 def test_read_state_falls_back_to_direct_read(monkeypatch):
     dev, _ = make_device(monkeypatch, FakeClient(notify=False))
     state = asyncio.run(dev.async_read_state())
-    assert (state.mode, state.comfort_temp, state.eco_temp) == (4, 20.0, 17.0)
+    assert (state.mode, state.comfort_temp) == (4, 20.0)
 
 
 def test_read_state_when_start_notify_fails(monkeypatch):
@@ -167,7 +167,7 @@ def test_reconnects_after_link_loss(monkeypatch):
 
     state = asyncio.run(scenario())
     assert len(connects) == 2            # reconnexion transparente
-    assert (state.mode, state.comfort_temp, state.eco_temp) == (4, 20.0, 17.0)
+    assert (state.mode, state.comfort_temp) == (4, 20.0)
 
 
 def test_recovers_from_mid_operation_bleak_error(monkeypatch):
@@ -196,16 +196,16 @@ def test_write_retries_acks_and_commits(monkeypatch):
     client = FakeClient(
         read_script=[
             [116, 3, 1, 4],    # écho périmé -> relecture
-            [116, 5, 1, 43],   # écho payload OK
-            [116, 5, 1, 43],   # ack commit pas encore prêt -> relecture
+            [116, 5, 1, 42],   # écho payload OK
+            [116, 5, 1, 42],   # ack commit pas encore prêt -> relecture
             [0, 0, 0],         # ack commit OK
         ]
     )
     dev, _ = make_device(monkeypatch, client)
-    asyncio.run(dev.async_set_comfort_temp(21.5))
+    asyncio.run(dev.async_set_heating(True, device.AcovaState(mode=4, comfort_temp=15.0)))
     data_writes = [w for w in client.writes if w[0] == const.UUID_CHAR_DATA]
     cmd_writes = [w for w in client.writes if w[0] == const.UUID_CHAR_CMD]
-    assert data_writes[0][1][:4] == bytes([116, 5, 1, 43])
+    assert data_writes[0][1][:4] == bytes([116, 5, 1, 42])
     assert len(data_writes[0][1]) == const.PAYLOAD_SIZE
     assert cmd_writes == [(const.UUID_CHAR_CMD, bytes([1, 116, 5]))]
 
@@ -214,7 +214,7 @@ def test_write_fails_when_ack_never_matches(monkeypatch):
     client = FakeClient(read_script=[[1, 1, 0]] * (const.ACK_RETRIES + 1))
     dev, connects = make_device(monkeypatch, client)
     with pytest.raises(device.AcovaProtocolError):
-        asyncio.run(dev.async_set_mode(const.MODE_DAY))
+        asyncio.run(dev.async_set_heating(True, None))
     assert len(connects) == 1    # erreur de protocole : pas de reconnexion/rejeu
 
 
@@ -292,28 +292,50 @@ def _writes_by_dp(client):
     ]
 
 
-def test_heating_on_sets_max_setpoint_then_day_mode(monkeypatch):
-    client = FakeClient(read_script=[[116, 5, 1, 56], [0, 0, 0], [116, 3, 1, 4], [0, 0, 0]])
+DAY_AT_OFF_TEMP = device.AcovaState(mode=const.MODE_DAY, comfort_temp=const.HEAT_OFF_TEMP)
+
+
+def test_heating_on_writes_only_the_setpoint(monkeypatch):
+    client = FakeClient(read_script=[[116, 5, 1, 42], [0, 0, 0]])
     dev, _ = make_device(monkeypatch, client)
-    asyncio.run(dev.async_set_heating(True, write_setpoint=True))
-    assert _writes_by_dp(client) == [
-        (116, 5, protocol.temp_to_byte(const.TEMP_MAX)),
-        (116, 3, const.MODE_DAY),
-    ]
+    asyncio.run(dev.async_set_heating(True, DAY_AT_OFF_TEMP))
+    assert _writes_by_dp(client) == [(116, 5, 42)]       # 21 °C, mode déjà Jour
 
 
-def test_heating_on_skips_setpoint_when_already_max(monkeypatch):
-    client = FakeClient(read_script=[[116, 3, 1, 4], [0, 0, 0]])
+def test_heating_off_writes_low_setpoint(monkeypatch):
+    client = FakeClient(read_script=[[116, 5, 1, 30], [0, 0, 0]])
     dev, _ = make_device(monkeypatch, client)
-    asyncio.run(dev.async_set_heating(True, write_setpoint=False))
-    assert _writes_by_dp(client) == [(116, 3, const.MODE_DAY)]
+    on = device.AcovaState(mode=const.MODE_DAY, comfort_temp=const.HEAT_ON_TEMP)
+    asyncio.run(dev.async_set_heating(False, on))
+    assert _writes_by_dp(client) == [(116, 5, 30)]       # 15 °C
 
 
-def test_heating_off_is_frost_never_standby(monkeypatch):
-    client = FakeClient(read_script=[[116, 3, 1, 2], [0, 0, 0]])
+def test_heating_forces_day_mode_after_setpoint(monkeypatch):
+    client = FakeClient(
+        read_script=[[116, 5, 1, 42], [0, 0, 0], [116, 3, 1, 4], [0, 0, 0]]
+    )
     dev, _ = make_device(monkeypatch, client)
-    asyncio.run(dev.async_set_heating(False))
-    assert _writes_by_dp(client) == [(116, 3, const.MODE_FROST)]
+    auto = device.AcovaState(mode=const.MODE_AUTO, comfort_temp=19.0)
+    asyncio.run(dev.async_set_heating(True, auto))
+    assert _writes_by_dp(client) == [(116, 5, 42), (116, 3, const.MODE_DAY)]
+
+
+def test_heating_noop_when_already_in_target_state(monkeypatch):
+    client = FakeClient()
+    dev, _ = make_device(monkeypatch, client)
+    asyncio.run(dev.async_set_heating(False, DAY_AT_OFF_TEMP))
+    assert _writes_by_dp(client) == []
+
+
+def test_heating_never_sends_standby_or_frost(monkeypatch):
+    for on in (True, False):
+        client = FakeClient(
+            read_script=[[116, 5, 1, 42], [0, 0, 0], [116, 3, 1, 4], [0, 0, 0]] * 2
+        )
+        dev, _ = make_device(monkeypatch, client)
+        asyncio.run(dev.async_set_heating(on, None))
+        modes = [v for obj, dat, v in _writes_by_dp(client) if (obj, dat) == (116, 3)]
+        assert modes == [const.MODE_DAY]
 
 
 # --- Déconnexion propre ---------------------------------------------------------
