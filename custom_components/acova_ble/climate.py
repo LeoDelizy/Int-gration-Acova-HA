@@ -10,7 +10,7 @@ from homeassistant.components.climate import (
     HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.const import ATTR_HVAC_MODE, ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -88,7 +88,13 @@ class AcovaClimate(CoordinatorEntity[AcovaCoordinator], ClimateEntity):
         )
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
+        """Applique une consigne (et le mode, si l'appelant passe les deux)."""
+        hvac_mode = kwargs.get(ATTR_HVAC_MODE)
+        if hvac_mode is not None:
+            await self.async_set_hvac_mode(HVACMode(hvac_mode))
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
-        await self._async_send(self.coordinator.device.async_set_comfort_temp(temperature))
+        await self._async_send(
+            self.coordinator.device.async_set_comfort_temp(temperature)
+        )

@@ -1,4 +1,4 @@
-"""Coordinator : rafraîchit l'état du radiateur par poll (connexion à la demande)."""
+"""Coordinator : rafraîchit l'état du radiateur sur la connexion permanente."""
 from __future__ import annotations
 
 import logging
@@ -12,7 +12,13 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import const
-from .device import AcovaDevice, AcovaError, AcovaState
+from .device import (
+    AcovaConnectionError,
+    AcovaDevice,
+    AcovaError,
+    AcovaProtocolError,
+    AcovaState,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,21 +35,22 @@ class AcovaCoordinator(DataUpdateCoordinator[AcovaState]):
         )
         self.address = address
         self.entry = entry
-        ble_device = bluetooth.async_ble_device_from_address(hass, address, connectable=True)
-        self.device = AcovaDevice(ble_device, entry.title or address)
-
-    def _refresh_ble_device(self) -> None:
-        ble_device = bluetooth.async_ble_device_from_address(
-            self.hass, self.address, connectable=True
+        # Le BLEDevice est résolu auprès de HA à chaque (re)connexion : le chemin
+        # BlueZ peut changer (redémarrage de l'adaptateur, bascule de proxy…).
+        self.device = AcovaDevice(
+            None,
+            entry.title or address,
+            ble_device_provider=lambda: bluetooth.async_ble_device_from_address(
+                hass, address, connectable=True
+            ),
         )
-        if ble_device is not None:
-            self.device.set_ble_device(ble_device)
 
     async def _async_update_data(self) -> AcovaState:
-        self._refresh_ble_device()
         try:
             return await self.device.async_read_state()
-        except AcovaError as err:
+        except AcovaConnectionError as err:
+            raise UpdateFailed(f"connexion BLE perdue : {err}") from err
+        except AcovaProtocolError as err:
             raise UpdateFailed(str(err)) from err
 
     async def async_send(self, command: Awaitable[None]) -> None:
@@ -51,5 +58,5 @@ class AcovaCoordinator(DataUpdateCoordinator[AcovaState]):
         try:
             await command
         except AcovaError as err:
-            raise HomeAssistantError(f"Radiateur ACOVA injoignable : {err}") from err
+            raise HomeAssistantError(f"Échec de la commande ACOVA : {err}") from err
         await self.async_request_refresh()

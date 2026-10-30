@@ -42,13 +42,21 @@ TEMP_MIN: Final = 7.0
 TEMP_MAX: Final = 28.0               # relevé sur TEMPO 3 : 30 °C est plafonné à 28 °C
 TEMP_STEP: Final = 0.5
 
-# --- Divers ----------------------------------------------------------------
+# --- Liaison BLE ------------------------------------------------------------
 POST_CONNECT_DELAY: Final = 1.0      # s, l'app attend 1 s après connexion
+CONNECT_MAX_ATTEMPTS: Final = 4       # essais de connexion par establish_connection
+OPERATION_ATTEMPTS: Final = 2        # exécutions d'une opération (reconnexion comprise)
+OP_TIMEOUT: Final = 25.0              # s, borne globale d'une opération GATT
+DISCONNECT_TIMEOUT: Final = 5.0      # s, borne de la déconnexion propre
+
+# --- Protocole ---------------------------------------------------------------
 NOTIFY_WAIT: Final = 3.0             # s, attente notification avant repli en lecture directe
 ACK_RETRIES: Final = 10              # relectures de la caract. Données (retry(10) de l'app)
 ACK_RETRY_DELAY: Final = 0.2         # s entre deux relectures
-POLL_INTERVAL: Final = 300           # s, rafraîchissement d'état
-OP_READ: Final = 0x00
-OP_WRITE: Final = 0x01
 PAYLOAD_SIZE: Final = 30
 INLINE_VALUE_MAX: Final = 17         # au-delà : relecture explicite requise
+
+# --- Divers -------------------------------------------------------------------
+POLL_INTERVAL: Final = 60            # s, rafraîchissement d'état (lien permanent : peu coûteux)
+OP_READ: Final = 0x00
+OP_WRITE: Final = 0x01

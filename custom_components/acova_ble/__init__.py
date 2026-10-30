@@ -24,9 +24,9 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
     from .coordinator import AcovaCoordinator
 
     address: str = entry.data["address"]
-    ble_device = bluetooth.async_ble_device_from_address(hass, address, connectable=True)
-    if ble_device is None:
-        raise ConfigEntryNotReady(f"Radiateur ACOVA {address} introuvable")
+    if bluetooth.async_ble_device_from_address(hass, address, connectable=True) is None:
+        # Le premier refresh échouerait de toute façon, avec un message moins clair.
+        raise ConfigEntryNotReady(f"Radiateur ACOVA {address} hors de portée Bluetooth")
 
     coordinator = AcovaCoordinator(hass, entry, address)
     await coordinator.async_config_entry_first_refresh()
@@ -37,8 +37,10 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
 
 
 async def async_unload_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:
-    """Décharge une entrée."""
+    """Décharge une entrée et libère la connexion BLE du radiateur."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        coordinator = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        if coordinator is not None:
+            await coordinator.device.async_stop()
     return unload_ok
