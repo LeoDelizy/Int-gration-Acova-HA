@@ -1,16 +1,27 @@
 {
   "domain": "acova_ble",
   "name": "ACOVA BLE",
-  "version": "0.3.0",
-  "codeowners": ["@leodelizy"],
+  "bluetooth": [
+    {
+      "local_name": "TEMPO*"
+    },
+    {
+      "service_uuid": "03366e80-cf3a-11e1-9ab4-0002a5d5c51b"
+    }
+  ],
+  "codeowners": [
+    "@leodelizy"
+  ],
   "config_flow": true,
-  "dependencies": ["bluetooth"],
+  "dependencies": [
+    "bluetooth"
+  ],
   "documentation": "https://github.com/LeoDelizy/Int-gration-Acova-HA",
-  "issue_tracker": "https://github.com/LeoDelizy/Int-gration-Acova-HA/issues",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "requirements": ["bleak-retry-connector>=3.5.0"],
-  "bluetooth": [
-    { "service_uuid": "03366e80-cf3a-11e1-9ab4-0002a5d5c51b" }
-  ]
+  "issue_tracker": "https://github.com/LeoDelizy/Int-gration-Acova-HA/issues",
+  "requirements": [
+    "bleak-retry-connector>=3.5.0"
+  ],
+  "version": "0.4.0"
 }

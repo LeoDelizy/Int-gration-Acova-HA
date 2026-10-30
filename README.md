@@ -6,21 +6,23 @@ Issu du reverse engineering de l'app *ACOVA Control* (voir `docs/acova-ble-proto
 > ⚠️ Protocole reconstruit par **analyse statique** — à valider sur matériel réel.
 > Projet non affilié à ACOVA.
 
-## Fonctionnalités (v1)
-- Entité `climate` par radiateur :
-  - Modes : Arrêt (= hors-gel), Auto (programme), Chauffe (Confort / Éco via *preset*).
+## Fonctionnalités
+- Une entité `switch` **Chauffe** par radiateur, rien d'autre :
+  - ON = consigne Confort **21 °C**, OFF = consigne Confort **15 °C**, radiateur en mode Jour.
+  - Pensée pour un VTherm *over_switch* (ex. SmartPI) qui régule avec sa propre sonde ;
+    l'inertie du radiateur lisse les cycles. Prévoir des cycles longs (15–20 min) :
+    chaque basculement est une écriture dans le radiateur.
+  - Le thermostat interne borne toujours la chauffe à 21 °C, même si HA perd le lien.
+  - Un réglage manuel au thermostat est vu comme OFF ; le prochain ON le réécrit.
   - La veille du radiateur n'est jamais commandée : elle coupe son Bluetooth jusqu'à un
     réveil manuel au thermostat.
-  - Consigne de température (Confort), pas de 0,5 °C, 7–28 °C (28 °C = maximum du radiateur).
-- Entité `switch` **Chauffe** : ON = chauffe à fond (mode Jour, consigne 28 °C), OFF = hors-gel.
-  Idéale sous un VTherm de type *over_switch*, qui régule par cycles avec sa propre sonde
-  (prévoir des cycles longs : chaque basculement est une écriture dans le radiateur).
 - Connexion BLE **permanente avec reconnexion automatique** : commandes rapides, et une
   micro-coupure de lien ne fait plus échouer l'opération.
 - Ajout par sélection de l'appareil Bluetooth (ex. « TEMPO 3 (D2:C9:…) »).
-  Les radiateurs ACOVA n'annoncent pas leur UUID de service : pas d'auto-découverte.
+  Les radiateurs ACOVA n'annoncent pas leur UUID de service : l'auto-découverte se fait
+  sur le nom annoncé (`TEMPO*`, seul modèle vérifié) ; les autres modèles s'ajoutent à la main.
 
-Hors v1 : programme hebdomadaire, détection fenêtre, offset de calibration, température ambiante.
+Hors périmètre : entité climate, programme hebdomadaire, détection fenêtre, offset, température ambiante.
 
 ## Prérequis
 - Home Assistant avec le Bluetooth fonctionnel (HA OS recommandé).
@@ -48,8 +50,10 @@ bouton **2H** dans les 30 s. Sans appairage, le radiateur ignore les commandes.
 ```bash
 pip install pytest bleak bleak-retry-connector dbus-fast
 python -m pytest tests/        # tests du protocole (purs, sans matériel)
+
+pip install pytest-homeassistant-custom-component
+python -m pytest tests_ha -o asyncio_mode=auto   # chargement dans un vrai HA (radiateur simulé)
 ```
 Architecture : `const.py` (constantes) · `protocol.py` (trames, **pur/testé**) ·
 `device.py` (BLE, connexion permanente + reconnexion auto) ·
-`coordinator.py` (poll) · `config_flow.py` (découverte) · `climate.py` (entité) ·
-`switch.py` (entité). Design : `docs/superpowers/specs/`.
+`coordinator.py` (poll) · `config_flow.py` (découverte) · `switch.py` (entité). Design : `docs/superpowers/specs/`.

@@ -65,7 +65,6 @@ class AcovaState:
 
     mode: int
     comfort_temp: float
-    eco_temp: float | None = None
 
 
 class AcovaDevice:
@@ -104,9 +103,11 @@ class AcovaDevice:
             )
         return self._ble_device
 
-    def _on_disconnect(self, _client: BleakClient) -> None:
+    def _on_disconnect(self, client: BleakClient) -> None:
         """Le lien est tombé de lui-même : il sera rétabli à la prochaine opération."""
-        if self._expected_disconnect:
+        if self._expected_disconnect or client is not self._client:
+            # Rappel tardif d'un ancien client : ne pas oublier le lien courant,
+            # sinon il resterait ouvert (le radiateur n'accepte qu'un client).
             return
         _LOGGER.info(
             "[%s] connexion BLE interrompue, reconnexion à la prochaine opération",
@@ -230,8 +231,6 @@ class AcovaDevice:
                 return await operation(client)
         except AcovaError:
             raise  # déjà classée : protocole ou connexion
-        except PairingAgentError as err:
-            raise AcovaConnectionError(f"appairage BlueZ : {err}") from err
         except BleakNotFoundError as err:
             raise AcovaConnectionError(
                 "radiateur introuvable (hors de portée ou Bluetooth absent)"
@@ -244,8 +243,19 @@ class AcovaDevice:
             "[%s] appairage : appuyer sur le bouton 2H pendant que la LED clignote",
             self._name,
         )
-        async with pairing_agent(self._current_ble_device().address):
-            await client.pair()
+        try:
+            async with pairing_agent(self._current_ble_device().address):
+                await client.pair()
+            return
+        except PairingAgentError as err:
+            # Pas d'agent BlueZ local (conteneur sans D-Bus, proxy ESPHome…) :
+            # l'appairage peut aboutir sans lui, l'échec éventuel vient de pair().
+            _LOGGER.warning(
+                "[%s] agent d'appairage BlueZ indisponible (%s) : appairage sans agent",
+                self._name,
+                err,
+            )
+        await client.pair()
 
     # --- Réception des réponses -----------------------------------------------
 
@@ -294,8 +304,17 @@ class AcovaDevice:
 
     # --- Primitives lecture/écriture ------------------------------------------
 
+    def _drain_notifications(self) -> None:
+        """Purge les notifications en attente (réponses tardives, échos d'écriture)."""
+        while not self._notifications.empty():
+            raw = self._notifications.get_nowait()
+            _LOGGER.debug("[%s] notification périmée purgée : %s", self._name, raw.hex())
+
     async def _read_dp(self, client: BleakClient, dp: tuple[int, int]) -> bytes:
         object_id, data_id = dp
+        # Sinon une notification arrivée après NOTIFY_WAIT lors d'une lecture
+        # précédente du même datapoint serait prise pour la réponse actuelle.
+        self._drain_notifications()
         await client.write_gatt_char(
             const.UUID_CHAR_CMD,
             protocol.build_read_request(object_id, data_id),
@@ -349,19 +368,7 @@ class AcovaDevice:
             await self._read_dp(client, const.DP_COMFO_SETPOINT),
             const.DP_COMFO_SETPOINT,
         )
-        try:
-            eco_temp = protocol.byte_to_temp(
-                self._first_byte(
-                    await self._read_dp(client, const.DP_ECO_SETPOINT),
-                    const.DP_ECO_SETPOINT,
-                )
-            )
-        except AcovaProtocolError:
-            _LOGGER.debug("[%s] consigne éco illisible", self._name)
-            eco_temp = None
-        return AcovaState(
-            mode=mode, comfort_temp=protocol.byte_to_temp(comfo), eco_temp=eco_temp
-        )
+        return AcovaState(mode=mode, comfort_temp=protocol.byte_to_temp(comfo))
 
     async def async_read_state(self) -> AcovaState:
         return await self._run(self._read_state)
@@ -370,42 +377,30 @@ class AcovaDevice:
         """Appaire le radiateur (validation bouton 2H) puis vérifie par une lecture."""
         return await self._run(self._read_state, pair=True)
 
-    async def async_set_mode(self, mode: int) -> None:
-        await self._run(
-            lambda client: self._write_dp(client, const.DP_THERMOSTAT_MODE, bytes([mode]))
-        )
+    async def async_set_heating(self, on: bool, current: AcovaState | None) -> None:
+        """Chauffe (consigne HEAT_ON_TEMP) ou réduit (HEAT_OFF_TEMP), en mode Jour.
 
-    async def async_set_heating(self, on: bool, write_setpoint: bool = True) -> None:
-        """Chauffe à fond (mode Jour, consigne max) ou hors-gel.
-
-        La consigne max n'est réécrite que si nécessaire (`write_setpoint`) afin de
-        limiter les écritures dans la mémoire du radiateur. Jamais la veille : elle
-        coupe le Bluetooth du radiateur.
+        Le radiateur régule lui-même sur sa consigne Confort : il ne chauffe
+        jamais au-delà de HEAT_ON_TEMP, même si Home Assistant perd le lien.
+        Seul ce qui diffère de `current` est écrit (`None` : tout écrire), afin
+        de limiter les écritures dans la mémoire du radiateur.
         """
+        target = const.HEAT_ON_TEMP if on else const.HEAT_OFF_TEMP
 
         async def _apply(client: BleakClient) -> None:
-            if not on:
-                await self._write_dp(
-                    client, const.DP_THERMOSTAT_MODE, bytes([const.MODE_FROST])
-                )
-                return
-            if write_setpoint:
+            # Consigne d'abord : passer en Jour n'applique jamais l'ancienne consigne.
+            if current is None or current.comfort_temp != target:
                 await self._write_dp(
                     client,
                     const.DP_COMFO_SETPOINT,
-                    bytes([protocol.temp_to_byte(const.TEMP_MAX)]),
+                    bytes([protocol.temp_to_byte(target)]),
                 )
-            await self._write_dp(
-                client, const.DP_THERMOSTAT_MODE, bytes([const.MODE_DAY])
-            )
+            if current is None or current.mode != const.MODE_DAY:
+                await self._write_dp(
+                    client, const.DP_THERMOSTAT_MODE, bytes([const.MODE_DAY])
+                )
 
         await self._run(_apply)
-
-    async def async_set_comfort_temp(self, celsius: float) -> None:
-        value = bytes([protocol.temp_to_byte(celsius)])
-        await self._run(
-            lambda client: self._write_dp(client, const.DP_COMFO_SETPOINT, value)
-        )
 
     async def async_stop(self) -> None:
         """Déconnexion propre (déchargement de l'entrée HA, fin d'appairage…)."""

@@ -25,22 +25,13 @@ MODE_DAY: Final = 4
 MODE_USER: Final = 8
 MODE_AUTO: Final = 9
 
-# --- Mapping preset HA <-> mode (chauffe manuelle) -------------------------
-PRESET_COMFORT: Final = "comfort"
-PRESET_ECO: Final = "eco"
-PRESET_AWAY: Final = "away"
-
-PRESET_TO_MODE: Final = {
-    PRESET_COMFORT: MODE_DAY,
-    PRESET_ECO: MODE_NIGHT,
-    PRESET_AWAY: MODE_FROST,
-}
-MODE_TO_PRESET: Final = {mode: preset for preset, mode in PRESET_TO_MODE.items()}
-
 # --- Bornes de consigne -----------------------------------------------------
 TEMP_MIN: Final = 7.0
 TEMP_MAX: Final = 28.0               # relevé sur TEMPO 3 : 30 °C est plafonné à 28 °C
-TEMP_STEP: Final = 0.5
+
+# --- Switch Chauffe : le radiateur reste en mode Jour, seule la consigne change -
+HEAT_ON_TEMP: Final = 21.0           # °C, consigne Confort quand le switch est ON
+HEAT_OFF_TEMP: Final = 15.0          # °C, consigne Confort quand le switch est OFF
 
 # --- Liaison BLE ------------------------------------------------------------
 POST_CONNECT_DELAY: Final = 1.0      # s, l'app attend 1 s après connexion
