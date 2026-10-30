@@ -41,11 +41,21 @@ class AcovaConfigFlow(ConfigFlow, domain=DOMAIN):
         ble_device = async_ble_device_from_address(self.hass, address, connectable=True)
         if ble_device is None:
             return "cannot_connect"
+
+        def _ble_device_provider():
+            return async_ble_device_from_address(self.hass, address, connectable=True)
+
+        device = AcovaDevice(
+            ble_device, name, ble_device_provider=_ble_device_provider
+        )
         try:
-            await AcovaDevice(ble_device, name).async_pair()
+            await device.async_pair()
         except AcovaError as err:
             _LOGGER.debug("Appairage de %s échoué : %s", address, err)
             return "pairing_failed"
+        finally:
+            # Le radiateur n'accepte qu'un seul client : toujours libérer le lien.
+            await device.async_stop()
         return None
 
     async def async_step_bluetooth(

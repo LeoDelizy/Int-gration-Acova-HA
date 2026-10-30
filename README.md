@@ -15,6 +15,8 @@ Issu du reverse engineering de l'app *ACOVA Control* (voir `docs/acova-ble-proto
 - Entité `switch` **Chauffe** : ON = chauffe à fond (mode Jour, consigne 28 °C), OFF = hors-gel.
   Idéale sous un VTherm de type *over_switch*, qui régule par cycles avec sa propre sonde
   (prévoir des cycles longs : chaque basculement est une écriture dans le radiateur).
+- Connexion BLE **permanente avec reconnexion automatique** : commandes rapides, et une
+  micro-coupure de lien ne fait plus échouer l'opération.
 - Ajout par sélection de l'appareil Bluetooth (ex. « TEMPO 3 (D2:C9:…) »).
   Les radiateurs ACOVA n'annoncent pas leur UUID de service : pas d'auto-découverte.
 
@@ -36,16 +38,18 @@ installer **ACOVA BLE**, puis redémarrer.
 ## Configuration
 Paramètres → Appareils et services → *Ajouter une intégration* → **ACOVA BLE**,
 puis choisir le radiateur dans la liste des appareils Bluetooth détectés.
-Fermer l'app ACOVA Control sur le téléphone : le radiateur n'accepte qu'une connexion.
+Fermer l'app ACOVA Control sur le téléphone : le radiateur n'accepte qu'une connexion,
+et Home Assistant la maintient ouverte en continu.
 
 **Appairage** : après validation, la LED du thermostat clignote rapidement ; appuyer sur le
 bouton **2H** dans les 30 s. Sans appairage, le radiateur ignore les commandes.
 
 ## Développement
 ```bash
-pip install pytest bleak bleak-retry-connector
+pip install pytest bleak bleak-retry-connector dbus-fast
 python -m pytest tests/        # tests du protocole (purs, sans matériel)
 ```
 Architecture : `const.py` (constantes) · `protocol.py` (trames, **pur/testé**) ·
-`device.py` (BLE) · `coordinator.py` (poll) · `config_flow.py` (découverte) ·
-`climate.py` (entité). Design : `docs/superpowers/specs/`.
+`device.py` (BLE, connexion permanente + reconnexion auto) ·
+`coordinator.py` (poll) · `config_flow.py` (découverte) · `climate.py` (entité) ·
+`switch.py` (entité). Design : `docs/superpowers/specs/`.
